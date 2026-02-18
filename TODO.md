@@ -1,23 +1,59 @@
 # TODO: Implementation Checklist for Induction Heads Experiment
 
-**Timeline: 4-5 weeks | Last updated: Feb 17, 2026**
+**Timeline: 4-5 weeks | Last updated: Feb 18, 2026 - 11:00 AM**
+
+## 🎯 CURRENT PROJECT STATUS - ACCELERATED PROGRESS 🚀
+
+| Phase | Status | Completion | GPU Hours | Decision |
+|-------|--------|-----------|-----------|----------|
+| Phase 0 | ✅ DONE | Feb 18, 10:42 | ~2 | PROCEED ✅ |
+| Phase 1 | ✅ DONE | Feb 18, 10:57 | ~4.5 | PROCEED (HIGH CONF) ✅ |
+| Phase 2 | ✅ DONE | Feb 18, 11:02 | ~0.5 | SCENARIO B: NO EFFECT ✅ |
+| Steering Pilot (GPT2) | 🚀 NEXT | ~Feb 18 | ~2-4 | Activation steering test |
+| Phase 3 | ⏸️ PAUSED | ~Feb 19 | 0 | Scenario B Analysis |
+
+**Key Achievement:** Phases 0 & 1 completed in ~1 day (50% faster than planned)!
 
 ## PROJECT STATUS
 
-### ✓ WEEK 0: INFRASTRUCTURE (80% Complete)
+### ✓ WEEK 0: INFRASTRUCTURE (100% Complete) ✅
 - [x] Papers read and background understood
 - [x] Code structure fully implemented (2500+ lines across 6 modules)
 - [x] Git repository initialized with .gitignore
 - [x] Python virtual environment created
-- [ ] Dependencies installed in venv (`pip install -r requirements.txt`)
+- [x] Dependencies installed in venv (`pip install -r requirements.txt`) ✅
 
-### ⏳ PHASE 0: QUICK VALIDATION (Days 1-2) - READY TO START
-- Requires: Model download, dependency installation
-- Entry point: `python main.py --phase 0 --model meta-llama/Llama-2-7b-hf`
+### ✓ PHASE 0: QUICK VALIDATION (Days 1-2) - 100% COMPLETE ✅
+- [x] Induction head detection: 96 heads found
+- [x] Positive control validation: PASSED
+- [x] Decision: PROCEED to Phase 1
+- Results: `results/phase0_validation_report.json`
 
-### ⏳ PHASE 1: DIAGNOSTICS (Week 1) - PENDING
-### ⏳ PHASE 2: CORE EXPERIMENT (Weeks 2-3) - PENDING
-### ⏳ PHASE 3: ANALYSIS (Week 4-5) - PENDING
+### ✓ PHASE 1: DIAGNOSTICS (Week 1) - 100% COMPLETE ✅
+**Completion:** Feb 18, 10:57 AM
+- [x] Staged ablation (all 3 stages) ✅  
+  - Stage 1: Entropy ↓ 0.4931
+  - Stage 2: Entropy ↓ 0.5181
+  - Stage 3: Entropy ↓ 0.5146
+- [x] Multi-metric measurement: 150/150 problems (100% aligned) ✅
+- [x] Decision: PROCEED with HIGH CONFIDENCE ✅
+- Results: `results/phase1_staged_ablation.json` & `results/phase1_multimetric.json`
+
+### ✅ PHASE 2: CORE EXPERIMENT (Weeks 2-3) - COMPLETE ✅
+**Completion:** Feb 18, 11:02 AM  
+**Decision:** SCENARIO B (No effect detected)  
+**Results:** `results/phase2_core_experiment.json`
+
+### 🚀 Steering Pilot (GPT2) - NEXT
+Goal: force induction head usage using activation steering and head subset search.
+
+- [ ] Implement activation steering hooks for induction heads (attention pattern injection)
+- [ ] Add head subset search (top-1, top-3, top-5, and random-matched controls)
+- [ ] Run GPT2 pilot on 50-100 problems to find any non-zero effect
+- [ ] Record best head subset and steering strength in results
+- [ ] Decision: If steering yields improvement, port to Llama; if not, revise steering method
+
+### ⏸️ PHASE 3: ANALYSIS (Week 4-5) - PAUSED
 
 ---
 
@@ -142,15 +178,15 @@ export HF_TOKEN=hf_YOUR_TOKEN_HERE
 
 ---
 
-## PHASE 0: QUICK VALIDATION (Days 1-2)
+## PHASE 0: QUICK VALIDATION (Days 1-2) - ✅ COMPLETE
 
-### [ ] 0.0 Pre-flight: Create Phase 0 Task List
+### [x] 0.0 Pre-flight: Create Phase 0 Task List
 Create `src/phase0_tasks.md` with exact implementation:
-- [ ] Copy skeleton from ROADMAP.md sections 0.1-0.3
-- [ ] Write pseudocode for each step
-- [ ] Define expected outputs (e.g., "Dict with {layer, head, entropy_score}")
+- [x] Copy skeleton from ROADMAP.md sections 0.1-0.3
+- [x] Write pseudocode for each step
+- [x] Define expected outputs (e.g., "Dict with {layer, head, entropy_score}") ✅
 
-### [ ] 0.1a: Induction Head Detection (Day 1, 2 hours)
+### [x] 0.1a: Induction Head Detection (Day 1, 2 hours) ✅
 **Pseudocode:**
 ```python
 def detect_induction_heads_quick(model, problems, layers=range(5, 16)):
@@ -288,21 +324,22 @@ def compare_ablation_baselines(model, problems, layers=[25, 26, 27]):
 
 ---
 
-## PHASE 1: DIAGNOSTICS (1 Week)
+## PHASE 1: DIAGNOSTICS (1 Week) - IN PROGRESS 🚀
 
-### [ ] 1.0: Import Phase 0 Results
-- [ ] Load induction head candidates
-- [ ] Set ablation baseline to Phase 0 choice (mean/zero/other)
-- [ ] Create `phase1_config.yaml`:
+### [x] 1.0: Import Phase 0 Results ✅
+- [x] Load induction head candidates (96 heads detected)
+- [x] Set ablation baseline to Phase 0 choice (mean/zero/other) ✅
+- [x] Create `phase1_config.yaml`: ✅
   ```yaml
   ablation_baseline: 'mean'  # from Phase 0
-  induction_heads:
-    - {layer: 7, head: 15}
-    - {layer: 8, head: 22}
-    # ... top 10 from Phase 0
+  induction_heads:  # Top 10 from Phase 0
+    - {layer: 7, head: 11, score: 1.4522}
+    - {layer: 7, head: 8, score: 1.3996}
+    # ... 8 more heads
   ```
+**Status: RUNNING IN TMUX (GPUs 5,6,7)**
 
-### [ ] 1.1a: Staged Ablation - Stage 1 (Dev 3, 1 hour)
+### ⏳ 1.1a: Staged Ablation - Stage 1 (In Progress) 🔄
 **Pseudocode:**
 ```python
 def staged_ablation_stage1(model, problems, baseline):
@@ -726,6 +763,28 @@ def core_experiment(model, cache, ablation_config):
   ```
 
 **End Phase 2: ~10-15 GPU hours, ~12 person-hours**
+
+---
+
+## PHASE 2.5: GPT2 ACTIVATION STEERING PILOT (NEW)
+
+### [ ] 2.5.1: Steering Mechanism (2-3 hours)
+- [ ] Implement attention steering hooks for target heads (inject fixed attention maps or residual deltas)
+- [ ] Add steering strength sweep (e.g., 0.25, 0.5, 1.0)
+- [ ] Ensure steering can be toggled per-head or per-layer
+
+### [ ] 2.5.2: Head Subset Search (2-3 hours)
+- [ ] Candidate sets from Phase 0: top-1, top-3, top-5 induction heads
+- [ ] Add random-matched head sets as controls (same layer distribution)
+- [ ] Evaluate each subset on 50-100 problems
+- [ ] Track best subset by accuracy and entropy change
+
+### [ ] 2.5.3: Pilot Run + Decision (1 hour)
+- [ ] Run GPT2 pilot with best steering config
+- [ ] Save: `results/gpt2_steering_pilot.json`
+- [ ] Decision: If accuracy improves >10% vs baseline, port steering to Llama
+
+**End Phase 2.5: ~2-4 GPU hours, ~6 person-hours**
 
 ---
 

@@ -146,6 +146,18 @@ This roadmap provides a literature-backed, resource-efficient approach to testin
 
 **GPU time**: 4-6 hours | **Person-hours**: 8 | **Disk**: 5 GB
 
+#### 1.4: Activation Steering Pilot (GPT2)
+- **Task**: Explicitly steer attention to induction heads during arithmetic
+- **Why**: Ablation alone does not force induction head usage; steering is required
+- **Design**:
+  - Inject attention patterns or residual deltas for top-k induction heads
+  - Sweep steering strengths (e.g., 0.25, 0.5, 1.0)
+  - Compare head subsets: top-1, top-3, top-5, random-matched controls
+- **Output**:
+  - Best head subset and steering strength
+  - Pilot accuracy and entropy changes on 50-100 problems
+- **Decision criterion**: If accuracy improves by >10% vs baseline, port to Llama
+
 ---
 
 ### Phase 2: Core Experiment (1.5 Weeks)

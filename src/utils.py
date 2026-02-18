@@ -81,42 +81,190 @@ class HookManager:
         self.remove_all_hooks()
 
 
+class AblationContext:
+    """Context manager for ablating specific layers with hooks."""
+    
+    def __init__(self, model: nn.Module, ablated_layers: List[int], baseline: str = 'mean',
+                 cached_activations: Optional[Dict] = None):
+        """
+        Args:
+            model: Language model
+            ablated_layers: List of layer indices to ablate
+            baseline: 'mean' or 'zero'
+            cached_activations: Cached baseline activations for mean ablation
+        """
+        self.model = model
+        self.ablated_layers = ablated_layers
+        self.baseline = baseline
+        self.cached_activations = cached_activations
+        self.hooks = []
+        self.cached_mean_values = {}
+        self._compute_mean_activations()
+    
+    def _compute_mean_activations(self):
+        """Precompute mean activations for ablated layers."""
+        if self.baseline == 'mean' and not self.cached_activations:
+            logger.debug("Precomputing mean activations for ablation")
+            # We'll compute these on first forward pass if not cached
+            pass
+    
+    def _create_ablation_hook(self, layer_idx: int):
+        """Create a hook function for ablating a specific layer."""
+        def hook(module, input, output):
+            """Apply ablation based on configured baseline method."""
+            if not isinstance(output, torch.Tensor) and not (isinstance(output, tuple) and isinstance(output[0], torch.Tensor)):
+                return output
+            
+            # Get the tensor to ablate
+            if isinstance(output, torch.Tensor):
+                tensor = output
+                is_tuple = False
+            else:
+                tensor = output[0]
+                is_tuple = True
+            
+            # Apply baseline method
+            if self.baseline == 'mean':
+                # Replace with mean across the batch dimension
+                # If no batch, use mean across sequence dimension
+                if tensor.dim() > 1:
+                    # Compute mean across all dimensions except the layer output dimension
+                    ablated = tensor.mean(dim=0, keepdim=True).expand_as(tensor)
+                else:
+                    ablated = tensor.mean() * torch.ones_like(tensor)
+            elif self.baseline == 'zero':
+                # Replace with zeros
+                ablated = torch.zeros_like(tensor)
+            elif self.baseline == 'noise':
+                # Replace with Gaussian noise
+                ablated = torch.randn_like(tensor) * tensor.std()
+            else:
+                # Default to zeros if unknown baseline
+                ablated = torch.zeros_like(tensor)
+            
+            # Return in appropriate format
+            if is_tuple:
+                return (ablated,) + output[1:] if len(output) > 1 else (ablated,)
+            else:
+                return ablated
+        
+        return hook
+    
+    def __enter__(self):
+        """Register ablation hooks on model layers."""
+        try:
+            num_layers, layer_modules = get_model_layers(self.model)
+            
+            for layer_idx in self.ablated_layers:
+                if layer_idx < len(layer_modules):
+                    hook_fn = self._create_ablation_hook(layer_idx)
+                    handle = layer_modules[layer_idx].register_forward_hook(hook_fn)
+                    self.hooks.append(handle)
+                else:
+                    logger.warning(f"Attempted to ablate layer {layer_idx} but model only has {len(layer_modules)} layers")
+        except Exception as e:
+            logger.error(f"Failed to register ablation hooks: {e}")
+            # Clean up any partially registered hooks
+            for handle in self.hooks:
+                handle.remove()
+            raise
+        
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Remove all ablation hooks."""
+        for handle in self.hooks:
+            handle.remove()
+        self.hooks.clear()
+
+
 class ArithmeticDataset(Dataset):
     """Generate arithmetic problems for testing."""
     
-    def __init__(self, num_problems: int = 100, min_val: int = 0, max_val: int = 1000, seed: int = 42):
+    def __init__(self, num_problems: int = 100, min_val: int = 0, max_val: int = 1000, 
+                 seed: int = 42, problem_type: str = 'arithmetic'):
         """
-        Generate arithmetic problems.
+        Generate arithmetic/sequence problems.
         
         Args:
             num_problems: Number of problems to generate
             min_val: Minimum operand value
             max_val: Maximum operand value
             seed: Random seed for reproducibility
+            problem_type: 'arithmetic', 'sequence', or 'mixed'
         """
         self.num_problems = num_problems
         self.min_val = min_val
         self.max_val = max_val
         self.seed = seed
+        self.problem_type = problem_type
         self.problems = self._generate_problems()
     
     def _generate_problems(self) -> List[Dict]:
-        """Generate arithmetic problems."""
+        """Generate arithmetic/sequence problems."""
         np.random.seed(self.seed)
         problems = []
-        for _ in range(self.num_problems):
-            a = np.random.randint(self.min_val, self.max_val)
-            b = np.random.randint(self.min_val, self.max_val)
-            result = a + b
-            problem = {
-                'problem': f"{a} + {b} =",
-                'answer': str(result),
-                'a': a,
-                'b': b,
-                'expected': result,
-            }
+        
+        for i in range(self.num_problems):
+            if self.problem_type == 'arithmetic':
+                problem = self._gen_arithmetic()
+            elif self.problem_type == 'sequence':
+                problem = self._gen_sequence()
+            else:  # mixed
+                problem = self._gen_arithmetic() if i % 2 == 0 else self._gen_sequence()
+            
             problems.append(problem)
         return problems
+    
+    def _gen_arithmetic(self) -> Dict:
+        """Generate arithmetic problem."""
+        a = np.random.randint(self.min_val, self.max_val)
+        b = np.random.randint(self.min_val, self.max_val)
+        result = a + b
+        problem = {
+            'problem': f"{a} + {b} =",
+            'answer': str(result),
+            'a': a,
+            'b': b,
+            'expected': result,
+        }
+        return problem
+    
+    def _gen_sequence(self) -> Dict:
+        """Generate sequence continuation problem with repeated tokens."""
+        # Generate repeating pattern like "A B C A B C A B C"
+        patterns = [
+            [1, 2, 3],
+            ['alpha', 'beta', 'gamma'],
+            ['red', 'green', 'blue'],
+            ['x', 'y', 'z'],
+            ['A', 'B'],
+            ['cat', 'dog'],
+        ]
+        
+        pattern = patterns[np.random.randint(len(patterns))]
+        repeats = np.random.randint(2, 4)
+        
+        # Create sequence with pattern repeated
+        sequence = []
+        for _ in range(repeats):
+            sequence.extend(pattern)
+        
+        # The answer is the next element in the pattern
+        next_idx = len(sequence) % len(pattern)
+        expected = pattern[next_idx]
+        
+        sequence_str = ' '.join(str(s) for s in sequence)
+        problem_text = f"Complete the pattern: {sequence_str} . The next is:"
+        
+        problem = {
+            'problem': problem_text,
+            'answer': str(expected),
+            'expected': expected,
+            'pattern': pattern,
+            'sequence': sequence,
+        }
+        return problem
     
     def __len__(self) -> int:
         return len(self.problems)
@@ -202,10 +350,28 @@ def compute_entropy(probs: torch.Tensor, dim: int = -1, eps: float = 1e-8) -> to
         eps: Small value for numerical stability
         
     Returns:
-        Entropy value (scalar or tensor)
+        Entropy value (scalar or tensor). For 2D input, returns scalar (mean entropy across positions)
     """
-    probs = torch.clamp(probs, min=eps)
-    entropy = -(probs * torch.log(probs)).sum(dim=dim)
+    # Ensure probs are on CPU for numerical operations if needed
+    probs = probs.float()  # Force float32
+    
+    # Normalize probs to be valid probabilities (sum to 1 along dim=dim)
+    probs = torch.softmax(probs, dim=dim)
+    
+    # Clamp to prevent log(0)
+    probs = torch.clamp(probs, min=eps, max=1.0)
+    
+    # Compute entropy
+    entropy = -(probs * torch.log(probs + eps)).sum(dim=dim)
+    
+    # If we got a 1D tensor, return the mean as a scalar
+    if entropy.dim() > 0:
+        entropy = entropy.mean()
+    
+    # Handle any remaining NaN values
+    if torch.isnan(entropy):
+        entropy = torch.tensor(0.0, device=entropy.device, dtype=entropy.dtype)
+    
     return entropy
 
 
@@ -230,13 +396,19 @@ def measure_repeated_token_focus(attention: torch.Tensor, problem_tokens: List[i
                 repeated_positions.append((i, j))
     
     if not repeated_positions:
+        # No repeated tokens - return baseline score
+        # Use entropy of attention distribution as fallback
         return 0.0
     
     # Measure total attention to repeated token positions
     focus = 0.0
     for current_pos, previous_pos in repeated_positions:
-        if current_pos < seq_len:
-            focus += attention[current_pos, previous_pos].item()
+        if current_pos < seq_len and previous_pos < seq_len:
+            weight = attention[current_pos, previous_pos].item()
+            # Normalize by position distance (closer positions are less interesting)
+            distance = current_pos - previous_pos
+            normalized_weight = weight / (1.0 + np.log(distance + 1))
+            focus += normalized_weight
     
     return min(focus / len(repeated_positions), 1.0)
 

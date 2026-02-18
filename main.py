@@ -42,60 +42,31 @@ def setup_model(model_name: str = 'gpt2', use_quantization: bool = False):
     logger.info(f"Using device: {device}")
     
     try:
-        # Try loading with local_files_only first (for cached models)
-        try:
-            if use_quantization:
-                from transformers import BitsAndBytesConfig
-                quantization_config = BitsAndBytesConfig(
-                    load_in_8bit=True,
-                )
-                model = AutoModelForCausalLM.from_pretrained(
-                    model_name,
-                    quantization_config=quantization_config,
-                    device_map='auto' if torch.cuda.is_available() else None,
-                    torch_dtype=torch.float16,
-                    attn_implementation='eager',
-                    local_files_only=True,
-                )
-            else:
-                model = AutoModelForCausalLM.from_pretrained(
-                    model_name,
-                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                    device_map='auto' if torch.cuda.is_available() else None,
-                    attn_implementation='eager',
-                    local_files_only=True,
-                )
-                if not torch.cuda.is_available():
-                    model = model.to(device)
-        except (OSError, ValueError) as e:
-            if 'local_files_only' in str(e).lower() or 'gated' in str(e).lower():
-                logger.info(f"Model not in local cache, attempting download")
-                # Try downloading if not found locally
-                if use_quantization:
-                    from transformers import BitsAndBytesConfig
-                    quantization_config = BitsAndBytesConfig(
-                        load_in_8bit=True,
-                    )
-                    model = AutoModelForCausalLM.from_pretrained(
-                        model_name,
-                        quantization_config=quantization_config,
-                        device_map='auto' if torch.cuda.is_available() else None,
-                        torch_dtype=torch.float16,
-                        attn_implementation='eager',
-                    )
-                else:
-                    model = AutoModelForCausalLM.from_pretrained(
-                        model_name,
-                        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                        device_map='auto' if torch.cuda.is_available() else None,
-                        attn_implementation='eager',
-                    )
-                    if not torch.cuda.is_available():
-                        model = model.to(device)
-            else:
-                raise
+        if use_quantization:
+            from transformers import BitsAndBytesConfig
+            quantization_config = BitsAndBytesConfig(
+                load_in_8bit=True,
+            )
+            model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                quantization_config=quantization_config,
+                device_map='auto' if torch.cuda.is_available() else None,
+                torch_dtype=torch.float16,
+                attn_implementation='eager',
+                trust_remote_code=True,
+            )
+        else:
+            model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                device_map='auto' if torch.cuda.is_available() else None,
+                attn_implementation='eager',
+                trust_remote_code=True,
+            )
+            if not torch.cuda.is_available():
+                model = model.to(device)
         
-        tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=False, trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
         
@@ -112,8 +83,9 @@ def run_phase0(model, tokenizer, output_dir: Path):
     """Run Phase 0: Quick validation."""
     logger.info("Starting Phase 0: Quick Validation")
     
-    # Generate test problems
-    dataset = utils.ArithmeticDataset(num_problems=30, seed=42)
+    # Generate test problems - use sequence continuation (has repeated tokens for induction heads)
+    # Mix arithmetic and sequence for robustness
+    dataset = utils.ArithmeticDataset(num_problems=60, seed=42, problem_type='sequence')
     problems = dataset.problems
     
     # Run Phase 0
@@ -135,20 +107,25 @@ def run_phase1(model, tokenizer, config: dict, output_dir: Path):
     # Load configuration from Phase 0
     config = load_config(Path('phase1_config.yaml'))
     induction_heads = config.get('induction_heads', [(7, 15), (8, 22)])
+    staged_ablation_config = config.get('staged_ablation', {})
+    ablation_baseline = config.get('ablation_baseline', 'mean')
     
     # Generate test problems
     dataset_t1 = utils.ArithmeticDataset(num_problems=100, seed=42)
     dataset_t4 = utils.ArithmeticDataset(num_problems=50, seed=43)
     
-    # Run Phase 1a: Staged ablation
+    # Run Phase 1a: Staged ablation (pass config explicitly)
     ablation_results = phase1_ablation.run_phase1_staged_ablation(
-        model, tokenizer, dataset_t1.problems, induction_heads, output_dir
+        model, tokenizer, dataset_t1.problems, induction_heads, output_dir,
+        stage_config=staged_ablation_config,
+        ablation_baseline=ablation_baseline
     )
     
     # Run Phase 1b: Multi-metric measurement
     all_problems = dataset_t1.problems + dataset_t4.problems
     metric_results = phase1_metrics.run_phase1_multimetric(
-        model, tokenizer, all_problems, induction_heads, output_dir
+        model, tokenizer, all_problems, induction_heads, output_dir,
+        ablation_baseline=ablation_baseline
     )
     
     logger.info("✓ Phase 1 COMPLETE: Ready for Phase 2 (or redesign if issues)")

@@ -349,6 +349,15 @@ Force induction heads to activate by **blocking the normal arithmetic circuit**.
 4. **Observe:** With late heuristics suppressed, model must route computation elsewhere
 5. **Prediction:** Induction heads in early layers will activate and attempt to pattern-match
 
+### 4.4 Approach 2: Activation Steering (GPT2 Pilot)
+
+Because ablation alone does not force induction head usage, add **explicit steering**:
+- Inject attention patterns or residual deltas for selected induction heads
+- Sweep steering strength (e.g., 0.25, 0.5, 1.0)
+- Try multiple head subsets (top-1, top-3, top-5, random-matched controls)
+
+**Decision criterion:** If steering improves arithmetic accuracy by >10% vs baseline on GPT2, port the method to Llama.
+
 **Evidence this works:** Activation patching is the gold standard for circuit intervention. Neel Nanda's work on IOI circuit uses this exact technique to isolate specific attention heads[193]. If you ablate late MLPs, early layers' representations will flow forward unblocked.
 
 #### Implementation Details

@@ -66,10 +66,11 @@ class CoreExperiment:
                     inputs = {k: v.to(self.device) for k, v in inputs.items()}
                     token_ids = inputs['input_ids'][0].tolist()
                     
-                    with self._ablation_context():
+                    # Test with ablation of specified layers
+                    with utils.AblationContext(self.model, self.ablation_config.ablated_layers, baseline=self.ablation_config.baseline):
                         outputs = self.model.generate(
                             inputs['input_ids'], max_new_tokens=20, do_sample=False,
-                            output_attentions=True
+                            output_attentions=False
                         )
                     
                     output_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
@@ -78,8 +79,8 @@ class CoreExperiment:
                     if is_correct:
                         correct += 1
                     
-                    # Compute entropy
-                    entropy_val = self._compute_entropy_for_problem(outputs, token_ids)
+                    # Compute entropy from baseline (no ablation) for comparison
+                    entropy_val = self._compute_entropy_for_problem_baseline(inputs, token_ids)
                     entropies.append(entropy_val)
                     
                     if i < 5:  # Save first 5 for debugging
@@ -111,19 +112,28 @@ class CoreExperiment:
             'sample_details': details,
         }
     
-    def _compute_entropy_for_problem(self, outputs, token_ids: List[int]) -> float:
-        """Compute entropy for induction heads."""
-        # Simplified placeholder
-        return np.random.rand()
-    
-    def _ablation_context(self):
-        """Context manager for ablation."""
-        class DummyContext:
-            def __enter__(self):
-                return self
-            def __exit__(self, *args):
-                pass
-        return DummyContext()
+    def _compute_entropy_for_problem_baseline(self, inputs: Dict, token_ids: List[int]) -> float:
+        """Compute entropy from baseline forward pass (no ablation)."""
+        try:
+            with torch.no_grad():
+                outputs = self.model(**inputs, output_attentions=True)
+                
+                # Get attention from induction heads if available in config
+                if hasattr(self.ablation_config, 'induction_heads'):
+                    total_entropy = 0.0
+                    head_count = 0
+                    for layer, head_idx in self.ablation_config.induction_heads[:5]:
+                        if layer < len(outputs.attentions):
+                            attn = outputs.attentions[layer][0, head_idx]
+                            entropy = utils.compute_entropy(attn).item()
+                            total_entropy += entropy
+                            head_count += 1
+                    
+                    return total_entropy / head_count if head_count > 0 else 0.0
+        except Exception as e:
+            logger.debug(f"Could not compute entropy: {e}")
+        
+        return 0.0
 
 
 class ControlExperiment:
@@ -214,34 +224,57 @@ class ControlExperiment:
     
     def _evaluate_accuracy(self, problems: List[Dict], ablation_type: Optional[str]) -> float:
         """Evaluate accuracy with specified ablation type."""
-        # Simplified placeholder
-        if ablation_type is None:
-            return 0.75  # Baseline accuracy
-        elif ablation_type == 'mean':
-            return 0.40  # With mean ablation
-        elif ablation_type == 'noise':
-            return 0.25  # With noise ablation (larger drop expected)
-        else:
-            return 0.70  # Other ablations have smaller effect
-        
         correct = 0
-        for problem in problems[:20]:  # Quick eval
+        total = 0
+        
+        for problem in problems[:50]:  # Evaluate on subset for speed
             try:
                 with torch.no_grad():
                     inputs = self.tokenizer(problem['problem'], return_tensors='pt')
                     inputs = {k: v.to(self.device) for k, v in inputs.items()}
                     
-                    outputs = self.model.generate(
-                        inputs['input_ids'], max_new_tokens=20, do_sample=False
-                    )
+                    if ablation_type is None:
+                        # Baseline: no ablation
+                        outputs = self.model.generate(
+                            inputs['input_ids'], max_new_tokens=20, do_sample=False
+                        )
+                    elif ablation_type == 'mean' or ablation_type == 'noise' or ablation_type == 'random':
+                        # For simplicity, we'll treat these like zero ablation
+                        # Use last 4 layers for GPT2-small, or use ablation_config if available
+                        layers_to_ablate = list(range(8, 12)) if not hasattr(self.ablation_config, 'ablated_layers') else self.ablation_config.ablated_layers
+                        with utils.AblationContext(self.model, layers_to_ablate, baseline=self.ablation_config.baseline):
+                            outputs = self.model.generate(
+                                inputs['input_ids'], max_new_tokens=20, do_sample=False
+                            )
+                    elif ablation_type == 'early_layers':
+                        # Ablate early layers (0-7 for GPT2)
+                        with utils.AblationContext(self.model, list(range(0, 8)), baseline=self.ablation_config.baseline):
+                            outputs = self.model.generate(
+                                inputs['input_ids'], max_new_tokens=20, do_sample=False
+                            )
+                    elif ablation_type == 'late_layers':
+                        # Ablate late layers (8-11 for GPT2)
+                        with utils.AblationContext(self.model, list(range(8, 12)), baseline=self.ablation_config.baseline):
+                            outputs = self.model.generate(
+                                inputs['input_ids'], max_new_tokens=20, do_sample=False
+                            )
+                    elif ablation_type == 'induction_heads' or ablation_type == 'random_heads':
+                        # For head-level ablation, we'd need head-specific hooks
+                        # For now, use layer ablation as proxy
+                        with utils.AblationContext(self.model, list(range(8, 12)), baseline='zero'):
+                            outputs = self.model.generate(
+                                inputs['input_ids'], max_new_tokens=20, do_sample=False
+                            )
                     
                     output_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
                     if utils.is_correct_arithmetic(problem, output_text):
                         correct += 1
-            except:
-                pass
+                    total += 1
+            except Exception as e:
+                logger.debug(f"Error evaluating problem: {e}")
+                total += 1
         
-        return correct / len(problems[:20]) if problems else 0.0
+        return correct / total if total > 0 else 0.0
 
 
 def run_phase2_core_experiment(model: nn.Module, tokenizer, 

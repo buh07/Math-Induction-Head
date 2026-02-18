@@ -20,18 +20,21 @@ class MultiMetricMeasurer:
     """Measure induction head activation via multiple metrics."""
     
     def __init__(self, model: nn.Module, tokenizer, induction_heads: List[tuple],
-                 ablation_config: Optional[utils.AblationConfig] = None):
+                 ablation_config: Optional[utils.AblationConfig] = None,
+                 ablation_baseline: str = 'mean'):
         """
         Args:
             model: Language model
             tokenizer: Tokenizer
             induction_heads: List of (layer, head) tuples
             ablation_config: Ablation configuration (for behavioral metrics)
+            ablation_baseline: Baseline type for ablation ('mean', 'zero', etc.)
         """
         self.model = model
         self.tokenizer = tokenizer
         self.induction_heads = induction_heads
         self.ablation_config = ablation_config
+        self.ablation_baseline = ablation_baseline
         self.device = next(model.parameters()).device
     
     def measure_all_metrics(self, problem: Dict) -> Dict:
@@ -119,13 +122,14 @@ class MultiMetricMeasurer:
         Method: Generate with and without induction heads; measure logit divergence.
         """
         try:
-            with self._ablation_context(ablate=False):
-                outputs_normal = self.model.generate(
-                    inputs['input_ids'], max_new_tokens=10, do_sample=False,
-                    output_scores=True, return_dict_in_generate=True
-                )
+            # Normal generation
+            outputs_normal = self.model.generate(
+                inputs['input_ids'], max_new_tokens=10, do_sample=False,
+                output_scores=True, return_dict_in_generate=True
+            )
             
-            with self._ablation_context(ablate=True):
+            # Ablated generation
+            with utils.AblationContext(self.model, list(range(8, 12)), baseline=self.ablation_baseline):
                 outputs_ablated = self.model.generate(
                     inputs['input_ids'], max_new_tokens=10, do_sample=False,
                     output_scores=True, return_dict_in_generate=True
@@ -141,7 +145,8 @@ class MultiMetricMeasurer:
             jaccard = 1.0 - (matching / total if total > 0 else 1.0)
             
             return min(jaccard, 1.0)
-        except:
+        except Exception as e:
+            logger.debug(f"Error computing behavioral impact: {e}")
             return 0.0
     
     def _measure_repeated_focus(self, inputs: Dict, token_ids: List[int]) -> float:
@@ -177,19 +182,19 @@ class MultiMetricMeasurer:
         """Metric 4: How much do induction heads influence output logits?"""
         try:
             # Get normal logits
-            with self._ablation_context(ablate=False):
-                outputs_normal = self.model(**inputs)
-                logits_normal = outputs_normal.logits[:, -1, :]  # Last token
+            outputs_normal = self.model(**inputs)
+            logits_normal = outputs_normal.logits[:, -1, :]  # Last token
             
             # Get ablated logits
-            with self._ablation_context(ablate=True):
+            with utils.AblationContext(self.model, list(range(8, 12)), baseline=self.ablation_baseline):
                 outputs_ablated = self.model(**inputs)
                 logits_ablated = outputs_ablated.logits[:, -1, :]  # Last token
             
             # Compute logit difference
             logit_diff = ((logits_normal - logits_ablated) ** 2).mean().item()
             return min(logit_diff, 1.0)
-        except:
+        except Exception as e:
+            logger.debug(f"Error computing logit influence: {e}")
             return 0.0
     
     def _measure_consistency(self, inputs: Dict) -> float:
@@ -210,23 +215,15 @@ class MultiMetricMeasurer:
             # Check consistency
             all_same = all(out == outputs_list[0] for out in outputs_list)
             return 1.0 if all_same else 0.33
-        except:
+        except Exception as e:
+            logger.debug(f"Error measuring consistency: {e}")
             return 0.0
-    
-    def _ablation_context(self, ablate: bool):
-        """Context manager for ablation."""
-        # TODO: Implement actual ablation hooks
-        class DummyContext:
-            def __enter__(self):
-                return self
-            def __exit__(self, *args):
-                pass
-        return DummyContext()
 
 
 def run_phase1_multimetric(model: nn.Module, tokenizer, problems: List[Dict],
                            induction_heads: List[tuple],
-                           output_dir: Path = Path('results')) -> Dict:
+                           output_dir: Path = Path('results'),
+                           ablation_baseline: str = 'mean') -> Dict:
     """
     Run Phase 1 multi-metric measurement.
     
@@ -236,6 +233,7 @@ def run_phase1_multimetric(model: nn.Module, tokenizer, problems: List[Dict],
         problems: Tier 1 + Tier 4 problems (150 total)
         induction_heads: Top induction heads from Phase 0
         output_dir: Output directory
+        ablation_baseline: Baseline type for ablation ('mean', 'zero', etc.)
         
     Returns:
         {
@@ -251,7 +249,8 @@ def run_phase1_multimetric(model: nn.Module, tokenizer, problems: List[Dict],
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    measurer = MultiMetricMeasurer(model, tokenizer, induction_heads)
+    measurer = MultiMetricMeasurer(model, tokenizer, induction_heads,
+                                    ablation_baseline=ablation_baseline)
     
     results = []
     aligned_count = 0
