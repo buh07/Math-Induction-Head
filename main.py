@@ -34,34 +34,78 @@ def load_config(config_path: Path) -> dict:
         return yaml.safe_load(f) or {}
 
 
-def setup_model(model_name: str = 'meta-llama/Llama-2-7b-hf', use_quantization: bool = False):
+def setup_model(model_name: str = 'gpt2', use_quantization: bool = False):
     """Load model and tokenizer."""
     logger.info(f"Loading model: {model_name}")
     
-    if use_quantization:
-        from transformers import BitsAndBytesConfig
-        quantization_config = BitsAndBytesConfig(
-            load_in_8bit=True,
-            device_map='auto',
-        )
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            quantization_config=quantization_config,
-            device_map='auto',
-        )
-    else:
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            torch_dtype=torch.float16,
-            device_map='auto',
-        )
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    logger.info(f"Using device: {device}")
     
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    try:
+        # Try loading with local_files_only first (for cached models)
+        try:
+            if use_quantization:
+                from transformers import BitsAndBytesConfig
+                quantization_config = BitsAndBytesConfig(
+                    load_in_8bit=True,
+                )
+                model = AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    quantization_config=quantization_config,
+                    device_map='auto' if torch.cuda.is_available() else None,
+                    torch_dtype=torch.float16,
+                    attn_implementation='eager',
+                    local_files_only=True,
+                )
+            else:
+                model = AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                    device_map='auto' if torch.cuda.is_available() else None,
+                    attn_implementation='eager',
+                    local_files_only=True,
+                )
+                if not torch.cuda.is_available():
+                    model = model.to(device)
+        except (OSError, ValueError) as e:
+            if 'local_files_only' in str(e).lower() or 'gated' in str(e).lower():
+                logger.info(f"Model not in local cache, attempting download")
+                # Try downloading if not found locally
+                if use_quantization:
+                    from transformers import BitsAndBytesConfig
+                    quantization_config = BitsAndBytesConfig(
+                        load_in_8bit=True,
+                    )
+                    model = AutoModelForCausalLM.from_pretrained(
+                        model_name,
+                        quantization_config=quantization_config,
+                        device_map='auto' if torch.cuda.is_available() else None,
+                        torch_dtype=torch.float16,
+                        attn_implementation='eager',
+                    )
+                else:
+                    model = AutoModelForCausalLM.from_pretrained(
+                        model_name,
+                        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                        device_map='auto' if torch.cuda.is_available() else None,
+                        attn_implementation='eager',
+                    )
+                    if not torch.cuda.is_available():
+                        model = model.to(device)
+            else:
+                raise
+        
+        tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=False, trust_remote_code=True)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        
+        model.eval()
+        logger.info(f"✓ Model loaded: {model_name}")
+        return model, tokenizer
     
-    model.eval()
-    return model, tokenizer
+    except Exception as e:
+        logger.error(f"Failed to load model: {e}")
+        raise
 
 
 def run_phase0(model, tokenizer, output_dir: Path):
@@ -175,7 +219,7 @@ def main():
     parser.add_argument('--config', type=str, help='Config YAML file')
     parser.add_argument('--output-dir', type=str, default='results',
                        help='Output directory')
-    parser.add_argument('--model', type=str, default='meta-llama/Llama-2-7b-hf',
+    parser.add_argument('--model', type=str, default='gpt2',
                        help='Model name from HuggingFace')
     parser.add_argument('--quantize', action='store_true',
                        help='Use 8-bit quantization')

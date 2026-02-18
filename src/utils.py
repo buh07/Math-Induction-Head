@@ -20,6 +20,42 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def get_model_layers(model: nn.Module) -> Tuple[int, nn.ModuleList]:
+    """
+    Extract the number of layers and the layers themselves from a model.
+    Handles different model architectures (Llama, GPT-2, etc.).
+    
+    Args:
+        model: The language model
+        
+    Returns:
+        Tuple of (num_layers: int, layers: nn.ModuleList)
+        
+    Raises:
+        ValueError: If model architecture is not recognized
+    """
+    # Check for Llama architecture
+    if hasattr(model, 'model') and hasattr(model.model, 'layers'):
+        layers = model.model.layers
+        return len(layers), layers
+    
+    # Check for GPT-2 architecture
+    if hasattr(model, 'transformer') and hasattr(model.transformer, 'h'):
+        layers = model.transformer.h
+        return len(layers), layers
+    
+    # Check for generic transformer architecture
+    if hasattr(model, 'layers'):
+        layers = model.layers
+        return len(layers), layers
+    
+    raise ValueError(
+        f"Could not determine model architecture. "
+        f"Model type: {type(model).__name__}. "
+        f"Available attributes: {[attr for attr in dir(model) if not attr.startswith('_')][:20]}"
+    )
+
+
 class HookManager:
     """Context manager for registering/cleaning up forward hooks."""
     

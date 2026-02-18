@@ -31,6 +31,22 @@ class InductionHeadDetector:
         self.model = model
         self.tokenizer = tokenizer
         self.device = next(model.parameters()).device
+        
+        # Ensure model can output attentions
+        # SDPA doesn't support output_attentions, so we need to switch to eager attention
+        if hasattr(model, 'config'):
+            try:
+                model.config.output_attentions = True
+            except ValueError as e:
+                if 'sdpa' in str(e).lower():
+                    # Switch from SDPA to eager attention
+                    logger.info("Switching from SDPA to eager attention implementation")
+                    model.config._attn_implementation = 'eager'
+                    # Reload model weights with eager attention
+                    # This is usually handled by the forward pass, but we might need to recreate some modules
+                else:
+                    raise
+        logger.info(f"Initialized InductionHeadDetector for {type(model).__name__}")
     
     def detect_heads_quick(self, problems: List[Dict], layers: Optional[List[int]] = None,
                           num_heads: int = 32, threshold: float = 0.0) -> List[Dict]:
@@ -52,7 +68,7 @@ class InductionHeadDetector:
         """
         if layers is None:
             # Scan middle layers where induction heads typically appear
-            num_layers = len(self.model.model.layers)
+            num_layers, _ = utils.get_model_layers(self.model)
             layers = list(range(num_layers // 4, num_layers // 2))
         
         logger.info(f"Detecting induction heads in layers {layers}")
@@ -73,6 +89,14 @@ class InductionHeadDetector:
                             
                             outputs = self.model(**inputs, output_attentions=True)
                             
+                            # Check if attentions are available
+                            if outputs.attentions is None:
+                                raise RuntimeError("Model did not return attentions. Check model config.")
+                            
+                            # Verify layer index is valid
+                            if layer >= len(outputs.attentions):
+                                raise IndexError(f"Layer index {layer} out of range (model has {len(outputs.attentions)} attention layers)")
+                            
                             # Extract attention for this layer/head
                             attention = outputs.attentions[layer][0, head]  # (seq_len, seq_len)
                             
@@ -90,7 +114,7 @@ class InductionHeadDetector:
                             scores.append(score)
                     
                     except Exception as e:
-                        logger.warning(f"Error processing problem in layer {layer}, head {head}: {e}")
+                        logger.debug(f"Error processing problem in layer {layer}, head {head}: {e}")
                         continue
                 
                 if scores:

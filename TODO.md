@@ -102,15 +102,35 @@ Math_Induction_Head/
 ### [ ] 0.4 Download Model (1 hour)
 - [ ] Download Llama model (choose one):
   ```bash
+  source venv/bin/activate
+  
   # Option 1: Llama3-8B (if you have HF access)
-  huggingface-cli download meta-llama/Llama-3-8b-instruct
+  python download_model.py --model meta-llama/Llama-3-8b-instruct
   
   # Option 2: Llama2-7B (public, recommended)
-  huggingface-cli download meta-llama/Llama-2-7b-hf
+  python download_model.py --model meta-llama/Llama-2-7b-hf
   
   # Option 3: GPT-2 for testing (small, fast)
-  huggingface-cli download gpt2
+  python download_model.py --model gpt2
+  
+  # If using a custom token:
+  python download_model.py --model meta-llama/Llama-3-8b-instruct --token hf_YOUR_TOKEN
   ```
+
+**Setup HuggingFace Authentication (Required for Llama models):**
+```bash
+source venv/bin/activate
+
+# Method 1: Interactive login (recommended)
+huggingface-cli login
+# Then paste your HF token when prompted
+
+# Method 2: Set token as environment variable
+export HF_TOKEN=hf_YOUR_TOKEN_HERE
+
+# Then try the download
+```
+
 - [ ] Verify model downloads successfully
 - [ ] Check GPU memory requirements
 
