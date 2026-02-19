@@ -1,0 +1,23 @@
+dataset_seed: 0
+models:
+  - name: gpt2
+    cache_dir: ../LLM Second-Order Effects/models/hub
+    devices: "6,7"
+parts:
+  - name: baseline_eval
+    type: baseline
+    datasets:
+      - tier1_in_distribution
+      - tier_multi_operation
+  - name: attention_suppression
+    type: attention_sweep
+    datasets:
+      - tier1_in_distribution
+    attention_layers: [0, 1]
+    attention_scales: [1.0, 0.9]
+  - name: neuron_suppression
+    type: neuron_sweep
+    datasets:
+      - tier_multi_operation
+    neuron_layers: [0, 1]
+    neuron_scales: [1.0, 0.9]

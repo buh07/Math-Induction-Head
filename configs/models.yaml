@@ -1,0 +1,10 @@
+models:
+  - name: meta-llama/Llama-2-7b-hf
+    devices: "5,6"
+    notes: "Baseline reference model"
+  - name: meta-llama/Llama-3-8b-instruct
+    devices: "5,6"
+    notes: "Next-gen instruction model"
+  - name: microsoft/phi-3-mini-4k-instruct
+    devices: "5,6"
+    notes: "Smaller instruction-tuned baseline"

@@ -711,56 +711,44 @@ exp_induction_heads_arithmetic/
 
 ---
 
-## Part 6: Timeline and Next Steps
+## Part 6: Experimental Plan - Attention Steering and Circuit Intervention
 
-### Phase 1: Proof of Concept (2-3 weeks)
-- Implement baseline arithmetic evaluation
-- Compute mean activations across problem set
-- Implement activation patching hooks
-- Test on small problem set (~20 problems)
-- Verify results with basic visualization
+### 6.1 Planned Experiments
 
-### Phase 2: Full Experiment (2-3 weeks)
-- Run on full test set (50+ problems)
-- Analyze induction head activation patterns
-- Create attention visualizations
-- Statistical significance testing
-- Write preliminary report
+We will rebuild the evaluation pipeline from scratch before repeating any attention-steering or neuron-steering studies. The renewed plan keeps three pillars: baselines for arithmetic accuracy, attention-head interventions, and neuron-level interventions. Each pillar will be implemented only after the surrounding infrastructure (data loaders, hooks, and metrics) is validated end-to-end.
 
-### Phase 3: Extension and Publication (1-2 weeks)
-- Test on other models (Llama3-70B, Phi-3)
-- Explore intermediate scenarios (partial ablation)
-- Compare to alternative hypotheses
-- Finalize manuscript
+1. **Baseline regeneration** – reimplement arithmetic datasets, logging, and statistical tests so that every future result is reproducible.
+2. **Attention steering redesign** – implement clean hooks for suppressing or amplifying specified heads, along with automated sweeps over suppression factors before collecting any accuracy numbers.
+3. **MLP neuron analysis** – rerun neuron-identification pipelines on the rebuilt stack and confirm that any proposed ablations respect the new evaluation harness.
 
----
+### 6.2 Validation Goals
 
-## References
+- Ensure that regenerated baselines match trusted public references before performing interventions.
+- Require preregistered decision criteria (accuracy deltas, entropy targets, etc.) for every experiment; runs that do not meet prerequisites will be discarded and repeated.
+- Maintain detailed lab notes so that future audits can trace prompts, seeds, and configuration files for each trial.
 
-[6] Understanding LLMs: Insights from Mechanistic Interpretability. LessWrong, 2025.
+### 6.3 Documentation and Audit Trail
 
-[21] Transformer Circuits: On the Biology of a Large Language Model. transformer-circuits.pub, 2025.
+Every experimental run will deposit artifacts (configs, logs, plots) in fresh directories under `results/` once the new tooling exists. No historical files will be reused; instead, new scripts will snapshot their git revision and dependencies for later verification.
 
-[61] Nikankin, Y., Reusch, A., Mueller, A., & Belinkov, Y. (2025). Language Models Solve Math with a Bag of Heuristics. ICLR 2025.
+## Part 7: Timeline and Next Steps
 
-[68] Lindsey, J., et al. (2025). Modular Arithmetic: Language Models Solve Math Digit by Digit. arXiv:2508.02513.
+### Phase 1: Infrastructure Rebuild (Week 1)
+- Recreate the repository layout (datasets, caching utilities, CLI stubs).
+- Stand up automated linting and formatting for the new codebase.
+- Draft experiment templates and config schemas.
 
-[70] Top Reasoning LLMs Failed Horribly on USA Math Olympiad. Reddit r/LocalLLaMA, 2025.
+### Phase 2: Diagnostic Tooling (Weeks 2-3)
+- Implement staged ablation hooks and multi-metric measurement modules.
+- Add tokenization diagnostics to isolate single-token vs. multi-token arithmetic effects.
+- Define go/no-go gates for proceeding to full experiments.
 
-[73] Proof or Bluff: Evaluating LLMs on 2025 USA Math Olympiad. YouTube, 2025.
+### Phase 3: Core Experiments (Weeks 4-5)
+- Run baseline measurements on curated test suites.
+- Execute attention and neuron interventions once baselines are stable.
+- Capture statistical analyses plus contingency plans for ambiguous results.
 
-[86] Understanding Failure Modes of Out-of-Distribution Generalization. Academia.edu, 2020.
-
-[87] Out-of-Distribution Generalization via Composition. NIH, 2025.
-
-[116] Zhao, C., et al. (2025). Is Chain-of-Thought Reasoning of LLMs a Mirage? A Data Distribution Perspective. arXiv:2508.01191.
-
-[124] Cabannes, V., Arnal, C., Bouaziz, W., Yang, A., Charton, F., & Kempe, J. (2024). Iteration Head: A Mechanistic Study of Chain-of-Thought. NeurIPS 2024. https://proceedings.neurips.cc/paper_files/paper/2024/file/c50f8180ef34060ec59b75d6e1220f7a-Paper-Conference.pdf
-
-[140] Olsson, C., Elhage, N., Nanda, N., Joseph, N., DaHan, K., & Olah, C. (2022). In-context Learning and Induction Heads. Transformer Circuits Thread. https://transformer-circuits.pub/2022/in-context-learning-and-induction-heads/index.html
-
-[142] Attention Heads of Large Language Models - Review. PMC/NIH, 2025.
-
-[174] Mamidanna, S., Rai, D., Yao, Z., & Zhou, Y. (2025). All for One: LLMs Solve Mental Math at the Last Token With Information Transferred From Other Tokens. arXiv:2509.09650.
-
-[193] Nanda, N. (2023). Attribution Patching: Activation Patching At Industrial Scale. mechanistic-interpretability.org.
+### Phase 4: Extension and Publication (Weeks 6+)
+- Generalize findings across additional models and datasets.
+- Produce visualizations, ablation summaries, and a manuscript.
+- Perform independent verification runs before drafting conclusions.

@@ -1,0 +1,29 @@
+dataset_seed: 0
+models:
+  - name: gpt2
+    cache_dir: ../LLM Second-Order Effects/models
+    devices: "6,7"
+    model_path: "../LLM Second-Order Effects/models/models--gpt2/snapshots/607a30d783dfa663caf39e06633721c8d4cfcd7e"
+    tokenizer_path: "../LLM Second-Order Effects/models/hub/models--gpt2/snapshots/607a30d783dfa663caf39e06633721c8d4cfcd7e"
+parts:
+  - name: baseline_eval
+    type: baseline
+    datasets:
+      - tier1_in_distribution
+      - tier2_near_ood
+      - tier_multi_operation
+      - tier_gsm_style
+  - name: attention_suppression
+    type: attention_sweep
+    datasets:
+      - tier1_in_distribution
+      - tier2_near_ood
+    attention_layers: [0, 1, 2]
+    attention_scales: [1.0, 0.9, 0.75, 0.5]
+  - name: neuron_suppression
+    type: neuron_sweep
+    datasets:
+      - tier_multi_operation
+      - tier_gsm_style
+    neuron_layers: [0, 1, 2]
+    neuron_scales: [1.0, 0.9, 0.75, 0.5]

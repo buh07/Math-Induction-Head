@@ -1,0 +1,45 @@
+dataset_seed: 0
+models:
+  - name: gpt2-medium
+    cache_dir: ../LLM Second-Order Effects/models/hub
+    devices: "0,1,2"
+    model_path: ../LLM Second-Order Effects/models/models--gpt2-medium/snapshots/6dcaa7a952f72f9298047fd5137cd6e4f05f41da
+    tokenizer_path: ../LLM Second-Order Effects/models/models--gpt2-medium/snapshots/6dcaa7a952f72f9298047fd5137cd6e4f05f41da
+  - name: EleutherAI/pythia-1.4b
+    cache_dir: ../LLM Second-Order Effects/models/hub
+    devices: "0,1,2"
+    model_path: ../LLM Second-Order Effects/models/models--EleutherAI--pythia-1.4b/snapshots/fedc38a16eea3bd36a96b906d78d11d2ce18ed79
+    tokenizer_path: ../LLM Second-Order Effects/models/models--EleutherAI--pythia-1.4b/snapshots/fedc38a16eea3bd36a96b906d78d11d2ce18ed79
+  - name: google/gemma-2b
+    cache_dir: ../LLM Second-Order Effects/models/hub
+    devices: "0,1,2"
+    model_path: ../LLM Second-Order Effects/models/models--google--gemma-2b/snapshots/9cf48e52b224239de00d483ec8eb84fb8d0f3a3a
+    tokenizer_path: ../LLM Second-Order Effects/models/models--google--gemma-2b/snapshots/9cf48e52b224239de00d483ec8eb84fb8d0f3a3a
+  - name: meta-llama/Meta-Llama-3-8B
+    cache_dir: ../LLM Second-Order Effects/models/hub
+    devices: "0,1,2"
+    model_path: ../LLM Second-Order Effects/models/models--meta-llama--Meta-Llama-3-8B/snapshots/8cde5ca8380496c9a6cc7ef3a8b46a0372a1d920
+    tokenizer_path: ../LLM Second-Order Effects/models/models--meta-llama--Meta-Llama-3-8B/snapshots/8cde5ca8380496c9a6cc7ef3a8b46a0372a1d920
+  - name: microsoft/phi-2
+    cache_dir: ../LLM Second-Order Effects/models/hub
+    devices: "0,1,2"
+    model_path: ../LLM Second-Order Effects/models/models--microsoft--phi-2/snapshots/810d367871c1d460086d9f82db8696f2e0a0fcd0
+    tokenizer_path: ../LLM Second-Order Effects/models/models--microsoft--phi-2/snapshots/810d367871c1d460086d9f82db8696f2e0a0fcd0
+parts:
+  - name: baseline_eval
+    type: baseline
+    datasets:
+      - tier1_in_distribution
+      - tier_multi_operation
+  - name: attention_suppression
+    type: attention_sweep
+    datasets:
+      - tier1_in_distribution
+    attention_layers: [0, 1]
+    attention_scales: [1.0, 0.9]
+  - name: neuron_suppression
+    type: neuron_sweep
+    datasets:
+      - tier_multi_operation
+    neuron_layers: [0, 1]
+    neuron_scales: [1.0, 0.9]

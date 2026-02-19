@@ -1,24 +1,51 @@
-"""
-Math Induction Head Experiment Framework
+"""Lightweight utilities for the rebooted induction-head project."""
 
-Mechanistic interpretability study on whether induction heads can be forced
-to improve arithmetic computation in Llama3-8B via activation patching.
-"""
-
-__version__ = "0.1.0"
-
-from . import utils
-from . import validation_suite
-from . import staged_ablation
-from . import multi_metric_measurement
-from . import core_experiment
-from . import statistical_validation
+from .config import ExperimentConfig, load_config_file
+from .datasets import (
+    ArithmeticDataset,
+    DatasetBundle,
+    DatasetSpec,
+    TieredDatasetSuite,
+    MultiOperationArithmeticDataset,
+    GSMStyleDataset,
+    generate_prompt_batch,
+    load_tiered_suite,
+)
+from .logging_utils import RunLogger, create_run_manifest
+from .hooks import AttentionHookConfig, HookManager, NeuronHookConfig
+from .ablation import AblationStage, StagedAblationRunner
+from .tokenization_diagnostics import TokenizationReport, analyze_prompts
+from .hash_utils import hash_strings
+from .evaluation import BaselineEvaluator, SweepResult, run_parameter_sweep
+from .statistics import summarize
+from .model_loader import load_local_model
+from .experiment_runner import ExperimentRunner
 
 __all__ = [
-    "utils",
-    "validation_suite", 
-    "staged_ablation",
-    "multi_metric_measurement",
-    "core_experiment",
-    "statistical_validation",
+    "ExperimentConfig",
+    "load_config_file",
+    "ArithmeticDataset",
+    "DatasetSpec",
+    "DatasetBundle",
+    "TieredDatasetSuite",
+    "MultiOperationArithmeticDataset",
+    "GSMStyleDataset",
+    "load_tiered_suite",
+    "generate_prompt_batch",
+    "RunLogger",
+    "create_run_manifest",
+    "hash_strings",
+    "summarize",
+    "load_local_model",
+    "ExperimentRunner",
+    "AttentionHookConfig",
+    "NeuronHookConfig",
+    "HookManager",
+    "AblationStage",
+    "StagedAblationRunner",
+    "TokenizationReport",
+    "analyze_prompts",
+    "BaselineEvaluator",
+    "SweepResult",
+    "run_parameter_sweep",
 ]
