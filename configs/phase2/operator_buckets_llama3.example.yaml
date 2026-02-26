@@ -1,0 +1,22 @@
+# Example Phase 2 (Operator Heuristic Bottleneck Mainline) config
+# Placeholder only - not runnable in this reorg pass.
+
+run_name: operator_buckets_llama3_example
+phase: phase2
+model:
+  name: meta-llama/Meta-Llama-3-8B
+
+datasets:
+  operator_buckets:
+    addition: [no_carry, single_carry, cascading_carry]
+    subtraction: [no_borrow, borrow, cascading_borrow]
+    multiplication: [table_lookup, partial_product, carry_partial_sum]
+
+localization:
+  components: [attention_heads, mlp_neurons]
+  metrics: [answer_token_logit_delta, answer_token_prob_delta, next_token_kl]
+  stability: [same_set_shuffle_invariance, subsample_stability, family_heldout_stability]
+
+interventions:
+  tests: [ablation, amplification, patching]
+  controls: [matched_random, induction_baseline]

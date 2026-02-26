@@ -8,3 +8,5 @@ scikit-learn
 tqdm
 pyyaml
 jupyter
+datasets
+accelerate

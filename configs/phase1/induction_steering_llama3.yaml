@@ -1,0 +1,39 @@
+dataset_seed: 0
+models:
+  - name: meta-llama/Meta-Llama-3-8B
+    cache_dir: ../LLM Second-Order Effects/models
+    devices: "0,1,2"
+    model_path: "../LLM Second-Order Effects/models/models--meta-llama--Meta-Llama-3-8B/snapshots/8cde5ca8380496c9a6cc7ef3a8b46a0372a1d920"
+    tokenizer_path: "../LLM Second-Order Effects/models/models--meta-llama--Meta-Llama-3-8B/snapshots/8cde5ca8380496c9a6cc7ef3a8b46a0372a1d920"
+parts:
+  - name: baseline_eval
+    type: baseline
+    datasets:
+      - tier1_in_distribution
+      - tier2_near_ood
+      - tier_multi_operation
+      - tier_gsm_style
+  - name: induction_amp_no_downscale
+    type: attention_sweep
+    datasets:
+      - tier1_in_distribution
+      - tier2_near_ood
+    attention_head_targets:
+      - layer: 5
+        head: 3
+      - layer: 6
+        head: 0
+    attention_scales: [1.0, 1.25, 1.5, 2.0]
+  - name: induction_amp_downscale
+    type: attention_sweep
+    datasets:
+      - tier1_in_distribution
+      - tier2_near_ood
+    attention_head_targets:
+      - layer: 5
+        head: 3
+        downscale_others: 0.6
+      - layer: 6
+        head: 0
+        downscale_others: 0.6
+    attention_scales: [1.0, 1.25, 1.5, 2.0]

@@ -1,0 +1,56 @@
+dataset_seed: 0
+dataset_options:
+  include_gsm8k: true
+  gsm8k_num_problems: 80
+  gsm8k_split: "test"
+models:
+  - name: meta-llama/Meta-Llama-3-8B
+    cache_dir: ../LLM Second-Order Effects/models
+    devices: "0,1,2"
+    model_path: "../LLM Second-Order Effects/models/models--meta-llama--Meta-Llama-3-8B/snapshots/8cde5ca8380496c9a6cc7ef3a8b46a0372a1d920"
+    tokenizer_path: "../LLM Second-Order Effects/models/models--meta-llama--Meta-Llama-3-8B/snapshots/8cde5ca8380496c9a6cc7ef3a8b46a0372a1d920"
+parts:
+  - name: baseline_eval
+    type: baseline
+    datasets:
+      - tier_gsm8k
+  - name: induction_amp_no_downscale
+    type: attention_sweep
+    datasets:
+      - tier_gsm8k
+    attention_head_targets:
+      - layer: 5
+        head: 3
+      - layer: 6
+        head: 0
+    attention_scales: [1.0, 1.25, 1.5, 2.0]
+  - name: induction_blend_grid
+    type: attention_sweep
+    datasets:
+      - tier_gsm8k
+    attention_head_targets:
+      - layer: 5
+        head: 3
+      - layer: 6
+        head: 0
+    attention_blends:
+      - label: amp1.0_down1.0
+        module_scale: 1.0
+        head_scale: 1.0
+        downscale_others: 1.0
+      - label: amp1.2_down0.9
+        module_scale: 1.0
+        head_scale: 1.2
+        downscale_others: 0.9
+      - label: amp1.4_down0.8
+        module_scale: 1.0
+        head_scale: 1.4
+        downscale_others: 0.8
+      - label: amp1.6_down0.7
+        module_scale: 1.0
+        head_scale: 1.6
+        downscale_others: 0.7
+      - label: amp1.8_down0.6
+        module_scale: 1.0
+        head_scale: 1.8
+        downscale_others: 0.6

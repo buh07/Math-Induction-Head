@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import random
+import re
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+
+try:
+    from datasets import load_dataset
+except ImportError:  # pragma: no cover - optional dependency
+    load_dataset = None
 
 from .hash_utils import hash_strings
 
@@ -131,6 +137,72 @@ class GSMStyleDataset:
             self.answers.append(answer)
 
 
+class GSM8KDataset:
+    """Load a subset of GSM8K from Hugging Face for evaluation."""
+
+    def __init__(
+        self,
+        split: str = "test",
+        num_problems: int = 50,
+        seed: int = 0,
+        cache_dir: Optional[str] = None,
+    ) -> None:
+        if load_dataset is None:  # pragma: no cover - optional dependency
+            raise ImportError(
+                "The 'datasets' package is required to load GSM8K. "
+                "Install it via `pip install datasets`."
+            )
+        ds = load_dataset("gsm8k", "main", split=split, cache_dir=cache_dir)
+        rng = random.Random(seed)
+        indices = list(range(len(ds)))
+        rng.shuffle(indices)
+        selected = indices[: min(num_problems, len(ds))]
+        self.prompts: List[str] = []
+        self.answers: List[int] = []
+        for idx in selected:
+            item = ds[idx]
+            prompt = item["question"].strip()
+            answer = _parse_gsm8k_answer(item["answer"])
+            self.prompts.append(prompt)
+            self.answers.append(answer)
+
+
+def _parse_gsm8k_answer(solution: str) -> int:
+    """Extract the numeric answer from a GSM8K solution string."""
+    for line in reversed(solution.splitlines()):
+        if "####" not in line:
+            continue
+        candidate = line.split("####", 1)[1].strip()
+        if not candidate:
+            continue
+        normalized = candidate.replace(",", "")
+        normalized = normalized.replace("−", "-")
+        normalized = normalized.replace("$", " ")
+        normalized = normalized.replace("%", " ")
+        normalized = normalized.replace("¢", " ")
+        normalized = re.sub(r"[^\d\-\./ ]+", " ", normalized)
+        fraction_match = re.search(r"-?\d+\s*/\s*\d+", normalized)
+        if fraction_match:
+            raw = fraction_match.group().replace(" ", "")
+            numerator, denominator = raw.split("/", 1)
+            try:
+                value = float(numerator) / float(denominator)
+                return _normalize_numeric_answer(value)
+            except ZeroDivisionError:
+                pass
+        decimal_match = re.search(r"-?\d+(?:\.\d+)?", normalized)
+        if decimal_match:
+            value = float(decimal_match.group())
+            return _normalize_numeric_answer(value)
+    raise ValueError(f"Could not parse GSM8K answer from solution: {solution}")
+
+
+def _normalize_numeric_answer(value: float):
+    if abs(value - round(value)) < 1e-9:
+        return int(round(value))
+    return value
+
+
 @dataclass
 class DatasetSpec:
     name: str
@@ -184,7 +256,14 @@ def _generate_symbolic_prompts(num_prompts: int, rng: random.Random) -> List[str
     return prompts
 
 
-def load_tiered_suite(seed: int = 0) -> TieredDatasetSuite:
+def load_tiered_suite(
+    seed: int = 0,
+    *,
+    include_gsm8k: bool = False,
+    gsm8k_num_problems: int = 50,
+    gsm8k_split: str = "test",
+    gsm8k_cache_dir: Optional[str] = None,
+) -> TieredDatasetSuite:
     specs = [
         DatasetSpec(
             name="tier1_in_distribution",
@@ -251,4 +330,22 @@ def load_tiered_suite(seed: int = 0) -> TieredDatasetSuite:
             "num_problems": str(gsm_dataset.num_problems),
         },
     )
+
+    if include_gsm8k:
+        gsm8k_dataset = GSM8KDataset(
+            split=gsm8k_split,
+            num_problems=gsm8k_num_problems,
+            seed=seed + 5,
+            cache_dir=gsm8k_cache_dir,
+        )
+        bundles["tier_gsm8k"] = DatasetBundle(
+            name="tier_gsm8k",
+            prompts=gsm8k_dataset.prompts,
+            answers=gsm8k_dataset.answers,
+            metadata={
+                "type": "gsm8k",
+                "num_problems": str(len(gsm8k_dataset.prompts)),
+                "split": gsm8k_split,
+            },
+        )
     return TieredDatasetSuite(bundles=bundles)

@@ -4,6 +4,7 @@ from src.datasets import (
     load_tiered_suite,
     MultiOperationArithmeticDataset,
     GSMStyleDataset,
+    _parse_gsm8k_answer,
 )
 
 
@@ -35,3 +36,10 @@ def test_gsm_style_dataset_generates_word_problems():
     dataset = GSMStyleDataset(num_problems=3, seed=0)
     assert len(dataset.prompts) == 3
     assert all("?" in prompt for prompt in dataset.prompts)
+
+
+def test_parse_gsm8k_answer_handles_currency_and_fraction():
+    value = _parse_gsm8k_answer("#### $1,234 dollars")
+    assert value == 1234
+    half = _parse_gsm8k_answer("#### 3/2 hours")
+    assert abs(half - 1.5) < 1e-9

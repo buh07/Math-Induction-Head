@@ -1,114 +1,179 @@
-# Induction Head Research Roadmap (Fresh Start)
+# Arithmetic Heuristic Bottleneck Research Roadmap
 
 ## Executive Summary
 
-This roadmap assumes a complete rebuild of the mechanistic-interpretability workflow.
-No previous experiments or scripts are considered trustworthy; every component must be
-recreated and audited before collecting new data. The plan spans four phases that
-progress from infrastructure to publication, with explicit decision gates and success
-criteria at each step.
+This roadmap reflects the post-Plan-A pivot of the project.
 
-**Timeline:** ~6 weeks | **GPU Budget:** ≤25 hours | **Person-Hours:** ~35
+Project phase labels used throughout the repository:
+- **Phase 1 (Steering Baseline / Validated Baseline)** = completed induction-head steering baseline + reruns + Plan A validity tranche
+- **Phase 2 (Operator Heuristic Bottleneck Mainline)** = post-pivot arithmetic bottleneck program (current mainline)
 
----
+- **Phase 1 (Steering Baseline / Validated Baseline)** is complete enough to serve as the validated comparison axis; Phase 1 / Plan A is the completed induction-head validity tranche.
+- The mainline research direction is now **operator-specific heuristic bottlenecks** plus **CoT gating/composition**.
+- Future arithmetic improvement claims require arithmetic-specific component identification and causal validation; induction-head amplification is no longer the default primary intervention.
 
-## Phase 0 – Infrastructure Reset (Week 1)
+Baseline evidence anchor:
+- `results/phase1/canonical/head_validity_run_20260225_120553_gpu01/gate_summary.json`
 
-**Goals**
-- Recreate the repository layout with minimal, well-documented scaffolding.
-- Stand up coding standards (formatter, linter, type checker) and automated tests.
-- Specify configuration formats for datasets, models, and interventions.
+## Phase A: Consolidate Validated Baseline (completed Plan A, induction-head validity)
 
-**Tasks**
-1. Implement lightweight utility modules for dataset generation, logging, and config loading.
-2. Add smoke tests that exercise data loaders and CLI argument parsing.
-3. Document coding conventions and experiment-tracking requirements in `CONTRIBUTING.md`.
+### Goals
+- Preserve the Plan A artifact set as the canonical validated baseline tranche.
+- Clarify what was validated (control-task targeting/steering) vs what remained weak (arithmetic amplification gains).
+- Use Plan A as a comparison/control axis for future arithmetic-specific experiments.
 
-**Exit Criteria**
-- Utilities tested locally (unit tests pass).
-- `main.py` runs end-to-end in “dry-run” mode without contacting external services.
-- Decision memo written that confirms readiness for diagnostic tooling.
+### Tasks
+- Freeze and document Plan A artifact interpretation (`gate_summary.json`, Phase 2/3/4 summaries).
+- Maintain the head-validity pipeline (`scripts/phase1/run_head_validity_suite.py`) as a regression/validation harness.
+- Document the rank-stability caveat as same-set shuffle invariance (not full resampling robustness).
 
----
+### Exit Criteria
+- Baseline artifacts are documented and referenced in README/overview/report.
+- Team terminology is aligned on "validated baseline" vs "mainline direction".
+- Future experiment plans explicitly treat Plan A as a comparison axis, not the primary arithmetic intervention hypothesis.
 
-## Phase 1 – Diagnostic Tooling (Weeks 2–3)
+### Failure Conditions / Fallback
+- Failure: docs continue to overclaim induction-head arithmetic improvement.
+- Fallback: block publication-facing summaries until artifact-backed language is restored.
 
-**Goals**
-- Build modular hooks for attention-head and MLP-neuron interventions.
-- Implement tokenization diagnostics to separate single-token from multi-token issues.
-- Define quantitative gatekeeping metrics (entropy deltas, accuracy deltas, etc.).
+### Artifact Requirements
+- `results/phase1/canonical/head_validity_run_20260225_120553_gpu01/gate_summary.json`
+- `results/phase1/canonical/head_validity_run_20260225_120553_gpu01/phase2_detector/phase2_summary.json`
+- `results/phase1/canonical/head_validity_run_20260225_120553_gpu01/phase3_gate_summary.json`
+- `results/phase1/canonical/head_validity_run_20260225_120553_gpu01/phase4_arithmetic_sanity.json`
 
-**Tasks**
-1. Implement staged-ablation runners with configurable layer/Head selections.
-2. Create multi-metric measurement scripts (entropy, behavioral impact, logit attribution).
-3. Add tokenization stress tests that scale operand ranges and operation types.
+## Phase B: Operator-Bucket Dataset Buildout + Error Taxonomy
 
-**Exit Criteria**
-- Diagnostics produce reproducible metrics on synthetic prompts.
-- Hook implementations include automated tests plus sanity checks (e.g., zeroing out heads).
-- Steering/ablation configs validated via dry runs and documented in `docs/diagnostics.md`.
+### Goals
+- Build arithmetic datasets that expose operator-specific and subpattern-specific failures.
+- Measure failure anatomy (carry/borrow/per-digit errors), not just final-answer accuracy.
 
----
+### Tasks
+- Create bucketed datasets for addition/subtraction/multiplication (no-carry, carry, no-borrow, borrow, etc.).
+- Add metadata annotations per prompt (operator, bucket, expected answer, optional per-digit targets).
+- Extend evaluation outputs to include per-digit correctness and carry/borrow-specific metrics.
 
-## Phase 2 – Core Experiments (Weeks 4–5)
+### Exit Criteria
+- Dataset buckets exist with reproducible generation configs and hashes.
+- Error taxonomy metrics are emitted alongside standard accuracy/parse metrics.
+- At least one strong model (Llama-3-8B) shows differentiated performance across buckets.
 
-**Goals**
-- Collect brand-new baselines on curated arithmetic and symbolic datasets.
-- Run attention and neuron interventions only after baselines stabilize.
-- Capture statistical analyses with preregistered acceptance thresholds.
+### Failure Conditions / Fallback
+- Failure: bucket definitions do not separate behaviors (all buckets behave identically).
+- Fallback: refine bucket definitions and add representation variants (spacing, digit tags, format controls).
 
-**Tasks**
-1. Assemble Tiered test suites (in-distribution arithmetic, near-OOD numbers, symbolic patterns).
-2. Execute experiments with automated sweeps over suppression/amplification parameters.
-3. Store all artifacts (configs, logs, plots) in timestamped directories with README files.
+### Artifact Requirements
+- Dataset manifests/hashes per bucket family
+- Diagnostic summaries for bucket distribution and tokenization properties
+- Example prompt packs for manual inspection
 
-**Exit Criteria**
-- Baseline variance <3 percentage points across three independent seeds.
-- Intervention runs logged with complete metadata (model version, dataset hash, git commit).
-- Scenario decision (Improvement / Null / Mixed) documented with supporting plots.
+## Phase C: Arithmetic-Specific Causal Localization (attention + MLP)
 
----
+### Goals
+- Identify arithmetic-relevant components directly from arithmetic tasks.
+- Move from induction-proxy ranking to operator-specific causal ranking.
 
-## Phase 3 – Extension & Publication (Week 6+)
+### Tasks
+- Implement arithmetic-target causal metrics (answer-token and per-digit target logit deltas).
+- Run head and MLP-neuron ablations/patching sweeps by operator bucket.
+- Produce operator x component importance matrices with confidence intervals.
+- Add robustness checks for rankings (subsample stability, family-heldout stability, seed robustness).
 
-**Goals**
-- Validate findings across additional models and harder benchmarks (e.g., GSM8K).
-- Produce visualizations that explain head/neuron roles.
-- Draft a manuscript or technical report with transparent limitations.
+### Exit Criteria
+- Localizer outputs non-zero causal effects on arithmetic buckets.
+- Ranking beats matched-random controls on at least one operator bucket.
+- Robustness metrics pass minimum thresholds, including true subsampling/held-out families.
 
-**Tasks**
-1. Replicate top-performing configurations on at least two alternative model families.
-2. Extend datasets to include multi-step reasoning and multi-operation arithmetic.
-3. Run statistical validation scripts (bootstrap CIs, non-parametric tests) and archive outputs.
-4. Write the publication draft plus an audit appendix summarizing every run.
+### Failure Conditions / Fallback
+- Failure: arithmetic-specific rankings are unstable or indistinguishable from random.
+- Fallback: increase prompt counts, simplify bucket families, or switch to stronger target metrics (e.g., per-digit patching).
 
-**Exit Criteria**
-- Cross-model validation logs available and internally reviewed.
-- Visual assets (attention maps, accuracy curves) linked to raw data.
-- Draft ready for internal circulation with clearly labeled open questions.
+### Artifact Requirements
+- Localization JSON outputs with schema/version metadata
+- Robustness summaries (including explicit "same-set shuffle invariance" vs true subsample metrics)
+- Saved candidate component sets with provenance
 
----
+## Phase D: Necessity/Sufficiency + Cross-Operator Specificity Interventions
 
-## Contingency Handling
+### Goals
+- Test whether localized operator-specific components are necessary and/or sufficient for performance shifts.
+- Quantify operator specificity (addition components should affect addition more than subtraction/multiplication).
 
-- **Tooling failure:** roll back to Phase 0, fix utilities, and rerun smoke tests before attempting diagnostics.
-- **Unstable baselines:** halt interventions, increase dataset sizes, and rerun until variance shrinks.
-- **Ambiguous results:** collect 2× additional problems per tier before making scenario calls.
-- **Resource overruns:** prioritize Tier 1 datasets and defer cross-model work until baseline confidence restores.
+### Tasks
+- Run ablation (necessity) and amplification/patching (sufficiency) interventions on localized sets.
+- Compare against matched-random and baseline induction-head sets.
+- Build a cross-operator specificity matrix and report CIs.
+- Add rescue experiments where practical (patch correct trajectories into incorrect ones).
 
----
+### Exit Criteria
+- At least one operator-specific component set shows stronger effect on its target operator than on non-target operators.
+- Necessity/sufficiency conclusions are artifact-backed and include matched controls.
+- Results are stable across at least two seeds or subsamples.
 
-## Documentation Requirements
+### Failure Conditions / Fallback
+- Failure: ablation harms are broad/non-specific and amplification remains null.
+- Fallback: interpret as gating/composition bottleneck and proceed to Phase E (CoT recruitment) before more intervention sweeps.
 
-1. Every script must emit a run manifest (JSON or YAML) summarizing parameters and git commit.
-2. Logs should be rotated per run and stored under `logs/YYYYMMDD_HHMM/`.
-3. Experiment notes (rationale, anomalies, follow-ups) belong in `notes/` with timestamped files.
-4. No result is deemed complete until another team member can replay it using only the manifest.
+### Artifact Requirements
+- Intervention sweep outputs (operator-tagged)
+- Cross-operator specificity matrix (machine-readable + summary table)
+- Bootstrap CI summaries and effect-size reports
 
----
+## Phase E: CoT vs Direct-Answer Circuit Recruitment / Gating
 
-## Next Actions
+### Goals
+- Explain why CoT helps math using circuit recruitment and gating/composition differences.
+- Distinguish scaffolding effects from arithmetic compute/control effects.
 
-1. Implement the Phase 0 utilities and smoke tests.
-2. Draft diagnostics specifications (APIs, expected metrics) for review.
-3. Schedule the first audit checkpoint after Phase 1 to confirm readiness for expensive runs.
+### Tasks
+- Run matched direct-answer vs CoT prompt pairs on the same arithmetic instances.
+- Compare localized component sensitivity and activation patterns across prompting modes.
+- Evaluate whether CoT improves arithmetic via better heuristic gating/composition, not just stronger induction-like signals.
+- Add step-level perturbation tests where feasible (format perturbation vs arithmetic correctness).
+
+### Exit Criteria
+- Clear, artifact-backed differences between direct-answer and CoT circuit recruitment.
+- At least one result supports or falsifies the CoT gating/composition hypothesis.
+- Interpretation rules separate formatting effects from arithmetic correctness effects.
+
+### Failure Conditions / Fallback
+- Failure: CoT differences reduce to parseability/formatting only.
+- Fallback: tighten prompt controls and move to more structured scratchpad prompts.
+
+### Artifact Requirements
+- Paired direct-answer/CoT run outputs
+- Recruitment/comparison summaries
+- Perturbation experiment outputs and interpretation notes
+
+## Phase F: Multi-Model Replication + Publication
+
+### Goals
+- Replicate the operator-bottleneck findings across additional models.
+- Produce a publication-quality report with clear claims, caveats, and negative results where applicable.
+
+### Tasks
+- Replicate Phases C/D (and selected Phase E analyses) on Gemma-2B, then a weaker contrast model.
+- Standardize artifacts/schemas across models.
+- Draft manuscript/report with a separate Plan A baseline section and pivot rationale.
+- Include explicit limitations (tokenization, prompt dependence, stability criteria).
+
+### Exit Criteria
+- At least one replication model shows the same directional operator-specific pattern or a clearly interpretable contrast.
+- Publication draft contains artifact-backed tables/figures and conservative claims.
+- Reproducibility instructions (tmux or scheduler, logs, manifests) are complete.
+
+### Failure Conditions / Fallback
+- Failure: cross-model results diverge without explanation.
+- Fallback: publish as model-dependent findings with explicit tokenization/architecture hypotheses and targeted follow-up work.
+
+### Artifact Requirements
+- Cross-model replication manifests and result summaries
+- Final report/manuscript draft
+- Reproduction protocol and environment documentation
+
+## Cross-Phase Rules
+
+- Arithmetic amplification claims require arithmetic-specific component identification first.
+- Always distinguish "same-set shuffle invariance" from true stability/robustness.
+- Separate control-task validity claims from arithmetic-improvement claims.
+- Every summary claim must reference concrete artifacts (JSON/logs), not only narrative notes.

@@ -16,6 +16,11 @@ def load_local_model(
     tokenizer_path: Optional[str] = None,
 ) -> Tuple[torch.nn.Module, AutoTokenizer]:
     from transformers import AutoModelForCausalLM, AutoTokenizer
+    try:
+        import accelerate  # noqa: F401
+        has_accelerate = True
+    except ImportError:  # pragma: no cover - optional dependency
+        has_accelerate = False
 
     dtype = torch.float16 if torch.cuda.is_available() else torch.float32
     cache_path = Path(cache_dir)
@@ -24,13 +29,13 @@ def load_local_model(
     model_load_path = model_path or model_name
     model_kwargs = {
         "local_files_only": local_files_only,
-        "torch_dtype": dtype,
+        "dtype": dtype,
         "trust_remote_code": True,
     }
     if model_path is None:
         model_kwargs["cache_dir"] = str(cache_path)
     model_kwargs["attn_implementation"] = "eager"
-    if torch.cuda.is_available():
+    if torch.cuda.is_available() and has_accelerate:
         model_kwargs["device_map"] = "auto"
     model = AutoModelForCausalLM.from_pretrained(model_load_path, **model_kwargs)
 

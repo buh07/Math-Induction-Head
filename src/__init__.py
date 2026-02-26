@@ -8,6 +8,7 @@ from .datasets import (
     TieredDatasetSuite,
     MultiOperationArithmeticDataset,
     GSMStyleDataset,
+    GSM8KDataset,
     generate_prompt_batch,
     load_tiered_suite,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "TieredDatasetSuite",
     "MultiOperationArithmeticDataset",
     "GSMStyleDataset",
+    "GSM8KDataset",
     "load_tiered_suite",
     "generate_prompt_batch",
     "RunLogger",
