@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Math Induction Head - Scope, Live Campaign Snapshot, and Expected Outcomes</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --bg2: #121a33;
+      --card: #161f3d;
+      --text: #e8eeff;
+      --muted: #a9b7e6;
+      --accent: #6ea8ff;
+      --ok: #58d68d;
+      --warn: #f5b041;
+      --bad: #ec7063;
+      --border: #2b3761;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, Segoe UI, Arial, sans-serif;
+      color: var(--text);
+      background: radial-gradient(1200px 600px at 20% -10%, #1c2c5e, var(--bg));
+      line-height: 1.4;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(8, 12, 25, 0.9);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(6px);
+    }
+    nav {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 10px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    nav a {
+      color: var(--muted);
+      text-decoration: none;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+    nav a:hover { color: var(--text); border-color: var(--accent); }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 20px 16px 40px;
+    }
+    section.slide {
+      background: linear-gradient(180deg, rgba(22,31,61,0.95), rgba(16,24,49,0.95));
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 22px;
+      margin: 0 0 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+    }
+    h1, h2, h3 { margin: 0 0 10px; }
+    h1 { font-size: 34px; letter-spacing: 0.2px; }
+    h2 { font-size: 24px; color: #d7e4ff; }
+    h3 { font-size: 18px; color: #c5d8ff; }
+    p, li { color: var(--muted); }
+    ul { margin: 8px 0 0 18px; }
+    .subtitle { color: #b8c9ff; font-size: 16px; margin-bottom: 8px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+    }
+    .card {
+      background: rgba(15, 24, 50, 0.75);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+    }
+    .kpi {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .pill {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 9px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-right: 6px;
+      border: 1px solid transparent;
+    }
+    .ok { color: var(--ok); border-color: rgba(88,214,141,0.35); background: rgba(88,214,141,0.12); }
+    .warn { color: var(--warn); border-color: rgba(245,176,65,0.35); background: rgba(245,176,65,0.12); }
+    .bad { color: var(--bad); border-color: rgba(236,112,99,0.35); background: rgba(236,112,99,0.12); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      font-size: 14px;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+      color: var(--muted);
+    }
+    th { color: #cfe0ff; background: rgba(11, 17, 36, 0.9); }
+    code {
+      color: #dce8ff;
+      background: rgba(7, 12, 27, 0.8);
+      border: 1px solid var(--border);
+      padding: 2px 5px;
+      border-radius: 5px;
+      font-size: 12px;
+    }
+    .footer-note {
+      font-size: 12px;
+      color: #8fa4dd;
+      margin-top: 8px;
+    }
+    @media print {
+      header { display: none; }
+      body { background: #fff; color: #111; }
+      section.slide { box-shadow: none; border-color: #ccc; page-break-inside: avoid; }
+      p, li, th, td { color: #333; }
+      code { color: #111; border-color: #ddd; background: #f7f7f7; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="#s1">Title</a>
+      <a href="#s2">Question</a>
+      <a href="#s3">Scope</a>
+      <a href="#s3a">Plain English</a>
+      <a href="#s4">Phase 1</a>
+      <a href="#s5">Phase 1 Results</a>
+      <a href="#s6">Phase 2</a>
+      <a href="#s6a">Phase 2 Goals</a>
+      <a href="#s7">Current Status</a>
+      <a href="#s9">Expected Results</a>
+      <a href="#s10">Decision Gates</a>
+      <a href="#s8">Gate Rationale</a>
+      <a href="#s11">Takeaways</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="slide" id="s1">
+      <h1>Math Induction Head</h1>
+      <p class="subtitle">Project scope, live Phase 2 campaign snapshot, and expected evidence targets</p>
+      <p><strong>Snapshot time:</strong> March 5, 2026, 08:23 EST</p>
+      <p>
+        This program started with induction-head steering as a math-improvement hypothesis, then pivoted to
+        operator-specific bottlenecks and CoT gating/composition after a completed validity-first tranche.
+      </p>
+      <div>
+        <span class="pill ok">Phase 1 complete (validated baseline)</span>
+        <span class="pill warn">Legacy Phase 2 run is provisional</span>
+        <span class="pill ok">Phase 2.1 hardening campaign is running now</span>
+      </div>
+    </section>
+
+    <section class="slide" id="s2">
+      <h2>Research Question and What This Campaign Must Answer</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Original Question</h3>
+          <p>Can induction-head targeting/steering improve arithmetic performance in LLMs?</p>
+        </div>
+        <div class="card">
+          <h3>Updated Mainline Question</h3>
+          <p>Are arithmetic failures better explained by operator-specific bottlenecks plus control/gating limits than by induction-head amplification alone?</p>
+        </div>
+        <div class="card">
+          <h3>Required evidence from this run</h3>
+          <p>Non-trivial localization, operator-specific intervention effects, and substantive CoT evidence under preregistered gates.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s3">
+      <h2>Entire Scope of the Program</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Program Area</th>
+            <th>Phase 1 (Steering Baseline / Validated Baseline)</th>
+            <th>Phase 2 (Operator Heuristic Bottleneck Mainline)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Primary objective</td>
+            <td>Validate head targeting, detector causality, and steering controls</td>
+            <td>Find arithmetic bottlenecks by operator (add/sub/mul) and test necessity/sufficiency</td>
+          </tr>
+          <tr>
+            <td>Main mechanism tested</td>
+            <td>Induction-style attention heads</td>
+            <td>Operator-specific attention + MLP components, plus CoT gating/composition</td>
+          </tr>
+          <tr>
+            <td>Validity discipline</td>
+            <td>Hook efficacy, detector validity, control-task steering gates</td>
+            <td>Selection/eval split, fixed-grid specificity, multiplicity coverage, anomaly gate, CoT gate</td>
+          </tr>
+          <tr>
+            <td>Deliverables</td>
+            <td>Canonical validated baseline artifacts and rerun corpus</td>
+            <td>Hardened Phase 2 pipeline and next empirical reruns</td>
+          </tr>
+          <tr>
+            <td>Current execution status</td>
+            <td>Completed and archived as comparative baseline</td>
+            <td>Live full-operator campaign in progress on GPU 0/1</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="slide" id="s3a">
+      <h2>What We Did (Plain English)</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Step 1: Test the original idea</h3>
+          <p>We first tested whether pushing induction-head behavior could directly improve arithmetic.</p>
+        </div>
+        <div class="card">
+          <h3>Step 2: Validate the tools</h3>
+          <p>We made sure hooks, detectors, and steering interventions actually changed the model in controlled settings.</p>
+        </div>
+        <div class="card">
+          <h3>Step 3: Reframe the bottleneck</h3>
+          <p>Because arithmetic gains were mostly null/mixed, we pivoted to operator-specific bottlenecks (add/sub/mul).</p>
+        </div>
+        <div class="card">
+          <h3>Step 4: Run a stricter campaign</h3>
+          <p>We are now running a hardened Phase 2 campaign that requires stronger causal and statistical evidence.</p>
+        </div>
+      </div>
+      <p class="footer-note">
+        Simple summary: Phase 1 validated the measurement/control machinery; Phase 2 tests where arithmetic failure actually lives.
+      </p>
+    </section>
+
+    <section class="slide" id="s4">
+      <h2>Phase 1 Experimental Design (Completed)</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Plan A validity tranche</h3>
+          <ul>
+            <li>Phase 0: instrumentation and hook efficacy</li>
+            <li>Phase 1: validated positive/negative control prompt suites</li>
+            <li>Phase 2: detector validity + ranking stability</li>
+            <li>Phase 3: causal steering checks on control tasks</li>
+            <li>Phase 4: minimal arithmetic sanity rerun</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>What this established</h3>
+          <ul>
+            <li>Interventions were real (not silent no-ops)</li>
+            <li>Detector outputs were causally meaningful on controls</li>
+            <li>Control steering validity gates passed</li>
+            <li>Arithmetic gains from amplification remained mostly null/mixed</li>
+          </ul>
+        </div>
+      </div>
+      <p class="footer-note">
+        Canonical artifacts: <code>results/phase1/canonical/head_validity_run_20260225_120553_gpu01/...</code>
+      </p>
+    </section>
+
+    <section class="slide" id="s5">
+      <h2>Phase 1 Results (Key Numbers)</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Detector validity</h3>
+          <p><span class="kpi">1.0</span> rank_stability_spearman_top50</p>
+          <p><span class="kpi">0.3333</span> effect_nonzero_rate_max</p>
+          <p><span class="kpi">0.9636</span> GSM plain vs CoT rank stability</p>
+          <p><span class="pill ok">separability pass</span></p>
+        </div>
+        <div class="card">
+          <h3>Arithmetic baseline</h3>
+          <p><span class="kpi">0.77</span> tier1_in_distribution</p>
+          <p><span class="kpi">0.3667</span> tier2_near_ood</p>
+          <p>Amplification deltas mostly small / CI crossing zero</p>
+          <p><span class="pill warn">mostly null/mixed gains</span></p>
+        </div>
+        <div class="card">
+          <h3>Ablation effect</h3>
+          <p>Top-head ablations were strongly harmful on arithmetic sanity checks.</p>
+          <p>Example: tier1 top ablation drop near <code>-0.47</code> at K=5, scale=0.0.</p>
+          <p><span class="pill ok">strong necessity signal</span></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s6">
+      <h2>Phase 2 Program Design + Live Campaign Configuration</h2>
+      <p>
+        Phase 2 is not just "run more experiments." It is a targeted attempt to identify which internal components
+        are responsible for arithmetic subskills and whether those components are operator-specific.
+      </p>
+      <div class="grid">
+        <div class="card">
+          <h3>2.1 Validity hardening</h3>
+          <ul>
+            <li>Tighter localization thresholds</li>
+            <li>Fixed preregistered specificity grid</li>
+            <li>Multiplicity coverage checks on primary comparisons</li>
+            <li>Selection/eval split to prevent leakage</li>
+            <li>Intervention anomaly blocking</li>
+            <li>CoT gate required for readiness</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Live campaign config (current run)</h3>
+          <ul>
+            <li>Models: Llama-3-8B, Gemma-2B, GPT-2 (+ Phase 1 rerun queued)</li>
+            <li>Operators: addition, subtraction, multiplication</li>
+            <li>Counts per bucket: 256, seeds: [0,1], strict selection/eval split</li>
+            <li>Primary grid: K={5,10}, scales={0.0,1.25}, ablation+amplification</li>
+            <li>CoT compare enabled with weighted-by-dataset-size pairing</li>
+          </ul>
+        </div>
+      </div>
+      <p class="footer-note">
+        Config: <code>configs/phase2/operator_buckets_llama3_full_operators_campaign.yaml</code>
+      </p>
+    </section>
+
+    <section class="slide" id="s6a">
+      <h2>What Phase 2 Is Trying to Accomplish</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Goal A: Find real arithmetic components</h3>
+          <ul>
+            <li>Find attention/MLP components that have measurable causal effect on arithmetic outputs.</li>
+            <li>Reject "effects" that are too small, unstable, or likely noise.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Goal B: Show operator specificity</h3>
+          <ul>
+            <li>Components picked for addition should matter more for addition than for subtraction/multiplication.</li>
+            <li>This is the key test that the bottleneck is operator-specific, not generic disruption.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Goal C: Explain CoT gains mechanistically</h3>
+          <ul>
+            <li>Test whether CoT changes circuit recruitment in a meaningful way.</li>
+            <li>Rule out trivial explanation: "CoT only changes formatting/parse rate."</li>
+          </ul>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <h3>If Phase 2 passes</h3>
+          <p>We get evidence-backed operator bottlenecks and a clear next step for multi-model replication.</p>
+        </div>
+        <div class="card">
+          <h3>If Phase 2 fails</h3>
+          <p>That is still valuable: it narrows the hypothesis and tells us to move to broader/path-level interventions.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s7">
+      <h2>Current Status (Legacy Audit + Active Campaign)</h2>
+      <p><strong>Legacy run:</strong> <code>results/phase2/operator_bottleneck_run_20260302_222145_gpu2</code></p>
+      <div class="grid">
+        <div class="card">
+          <h3>Legacy artifact audit result</h3>
+          <p><span class="pill warn">Operationally complete, scientifically not ready</span></p>
+          <ul>
+            <li>Legacy v1 gate summary reported readiness despite failed critical gates.</li>
+            <li>Specificity best-target was selected from bottom set in the legacy summary.</li>
+            <li>Localization gate passed with near-zero effects under permissive thresholds.</li>
+            <li>Audit override marks this run not ready: <code>legacy_audit.json</code>.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>What changed in hardened code</h3>
+          <p><span class="pill ok">Phase 2.1 hardening implemented</span></p>
+          <ul>
+            <li>Readiness now requires all required gates (including CoT + sanity when enabled).</li>
+            <li>Specificity gate is fixed to primary top-set, preregistered K/scale/interventions only.</li>
+            <li>Localization gate enforces non-trivial floors and component-pass counts.</li>
+            <li>Strict split failure now hard-stops before GPU stages.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Active rerun campaign (in progress)</h3>
+          <p><span class="pill ok">tmux session running</span></p>
+          <ul>
+            <li>Session: <code>phase2_gpu01_20260305_025436</code></li>
+            <li>GPUs active: 0 (Llama 3 8B), 1 (Gemma 2B); queued: GPT-2 then Phase 1 rerun</li>
+            <li>Artifacts: <code>results/phase2/campaign_20260305_025436_gpu01/</code></li>
+            <li>Completed stages so far: dataset build, split checks, preregistration/power artifact export</li>
+            <li>Current stage: localization sweeps (component ranking)</li>
+            <li>Next stages: interventions -> CoT compare -> final gate summary</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s9">
+      <h2>Results We Hope to See From the Current Campaign</h2>
+      <h3>Primary success pattern (academically meaningful)</h3>
+      <ul>
+        <li>Localization shows non-trivial effects for both attention and MLP on at least one operator family.</li>
+        <li>Top-set interventions beat matched-random on preregistered rows with signed directionality.</li>
+        <li>Specificity holds against non-target operators (not just target-only gains).</li>
+        <li>CoT evidence passes with effect not explained by parse-rate shifts.</li>
+        <li>Readiness only becomes true when all required gates pass without scope blocks.</li>
+      </ul>
+      <h3>If results are mixed or null</h3>
+      <ul>
+        <li>Treat as informative null: bottlenecks may be broader than current component families.</li>
+        <li>Prioritize targeted patching/path-level interventions and expanded robustness checks.</li>
+        <li>Keep interpretation conservative: no positive operator-mechanism claim without gate-complete evidence.</li>
+      </ul>
+    </section>
+
+    <section class="slide" id="s10">
+      <h2>Decision Gates and Thresholds (Current Campaign)</h2>
+      <p>
+        This table is the concrete contract for interpretation. If any required row fails, the campaign is not ready
+        for multi-model conclusions.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Gate</th>
+            <th>Must show</th>
+            <th>Fail condition</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>dataset_bucket_gate</code></td>
+            <td>Valid bucket construction + split policy applied</td>
+            <td>Strict split leakage or insufficient bucket quality</td>
+          </tr>
+          <tr>
+            <td><code>localization_validity_gate</code></td>
+            <td>Non-negligible effects + robustness coverage for enabled component families (attention + MLP)</td>
+            <td>Fails if effects do not clear configured floors or robustness is missing</td>
+          </tr>
+          <tr>
+            <td><code>operator_specificity_gate</code></td>
+            <td>Preregistered row-level target &gt; non-target evidence with CI support</td>
+            <td>Missing non-target evidence, weak CI support, or multiplicity failure</td>
+          </tr>
+          <tr>
+            <td><code>intervention_sanity_gate</code></td>
+            <td>No unexplained extreme anomalies</td>
+            <td>Flagged impossible jumps/regressions</td>
+          </tr>
+          <tr>
+            <td><code>cot_gating_evidence_gate</code></td>
+            <td>Substantive CoT effect not reducible to parse-rate shift</td>
+            <td>CoT disabled or effect explained by formatting/parse artifacts</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="grid">
+        <div class="card">
+          <h3>How to read this quickly</h3>
+          <ul>
+            <li>First check gate pass/fail status, not raw metric highs.</li>
+            <li>Then inspect failure reason fields and scope blocks.</li>
+            <li>Only after that interpret accuracy deltas and qualitative patterns.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Why thresholds matter</h3>
+          <ul>
+            <li>They prevent post-hoc threshold shopping.</li>
+            <li>They enforce consistency across Llama/Gemma/GPT-2 runs.</li>
+            <li>They make null results interpretable rather than ambiguous.</li>
+          </ul>
+        </div>
+      </div>
+      <p class="footer-note">
+        Key thresholds from config: <code>localization_nonzero_min=0.01</code>, <code>localization_prob_delta_abs_min_floor=1e-5</code>,
+        <code>specificity_ci_low_min=0.01</code>, <code>specificity_mean_gap_min=0.01</code>,
+        <code>multiplicity q_max=0.10</code>, <code>CoT effect_abs_min=0.01</code>, <code>parse_rate_delta_abs_max=0.05</code>.
+      </p>
+    </section>
+
+    <section class="slide" id="s8">
+      <h2>Why These Gates Exist (Plain Language)</h2>
+      <p>
+        The gates are not just engineering checks. They are the minimum requirements for a defensible mechanistic claim.
+      </p>
+      <div class="grid">
+        <div class="card">
+          <h3>1) Dataset gate</h3>
+          <p><strong>What it checks:</strong> we built the right prompt buckets and properly separated selection vs evaluation data.</p>
+          <p><strong>Why needed:</strong> without this, later results can be data leakage, not mechanism.</p>
+        </div>
+        <div class="card">
+          <h3>2) Localization gate</h3>
+          <p><strong>What it checks:</strong> measured effects are non-trivial and stable across robustness modes.</p>
+          <p><strong>Why needed:</strong> tiny/noisy effects cannot justify component-level claims.</p>
+        </div>
+        <div class="card">
+          <h3>3) Specificity gate</h3>
+          <p><strong>What it checks:</strong> preregistered top-set effects are stronger on target operator than non-target operators.</p>
+          <p><strong>Why needed:</strong> this is the core test of the Phase 2 hypothesis (operator-specific bottlenecks).</p>
+        </div>
+        <div class="card">
+          <h3>4) Intervention sanity gate</h3>
+          <p><strong>What it checks:</strong> no implausible jumps/regressions suggesting parser or hook artifacts.</p>
+          <p><strong>Why needed:</strong> prevents accepting broken-but-impressive looking numbers.</p>
+        </div>
+        <div class="card">
+          <h3>5) CoT gate</h3>
+          <p><strong>What it checks:</strong> CoT effects are substantive and not explained only by parse formatting.</p>
+          <p><strong>Why needed:</strong> CoT gating/composition is a central Phase 2 claim and must be tested directly.</p>
+        </div>
+      </div>
+      <p class="footer-note">
+        Readiness requires all required gates to pass together. A single strong number is not enough.
+      </p>
+    </section>
+
+    <section class="slide" id="s11">
+      <h2>Bottom Line (Updated for Live Campaign)</h2>
+      <ul>
+        <li>Phase 1 succeeded scientifically: induction-head steering validity is established as a baseline/control track.</li>
+        <li>Legacy Phase 2 addition run is explicitly audited as non-ready and should not drive new claims.</li>
+        <li>The hardened full-operator campaign is actively running under preregistered conditions.</li>
+        <li>The project decision point now depends on gate-complete evidence from this campaign, not provisional artifacts.</li>
+        <li>Expected next publication-quality claim: either validated operator-specific bottlenecks with CoT gating evidence, or a well-supported null.</li>
+      </ul>
+      <p class="footer-note">
+        Suggested usage: open this file directly in a browser for a project overview presentation.
+      </p>
+    </section>
+  </main>
+</body>
+</html>

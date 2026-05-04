@@ -6,6 +6,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
+import inspect
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 from statistics import mean
@@ -108,6 +109,63 @@ def _extract_int(text: str) -> Optional[int | float]:
     return None
 
 
+def _extract_int_strict_final(text: str) -> Optional[int | float]:
+    """Stricter numeric extraction for arithmetic buckets.
+
+    This mode avoids opportunistically grabbing unrelated numbers from reasoning text.
+    """
+    if not text:
+        return None
+    normalized = text.replace("−", "-")
+    lines = [line.strip() for line in normalized.splitlines() if line.strip()]
+
+    # Highest-priority explicit answer markers.
+    for line in reversed(lines):
+        if "####" in line:
+            candidate = line.split("####", 1)[1]
+            parsed = _extract_numeric_from_text(candidate)
+            if parsed is not None:
+                return parsed
+
+    cue_patterns = [
+        r"(?:final answer|answer|result)\s*(?:is|=|:)\s*([^\n]+)",
+        r"^\s*=\s*([^\n]+)$",
+    ]
+    for pattern in cue_patterns:
+        match = re.search(pattern, normalized, flags=re.IGNORECASE | re.MULTILINE)
+        if match:
+            parsed = _extract_numeric_from_text(match.group(1))
+            if parsed is not None:
+                return parsed
+
+    # If exactly one numeric token exists in the whole completion, accept it.
+    matches = NUMBER_PATTERN.findall(normalized)
+    if len(matches) == 1:
+        return _coerce_numeric(matches[0])
+
+    # Fall back only when the first non-empty line is itself a numeric answer token.
+    if lines:
+        first = lines[0]
+        if re.match(
+            r"^\s*[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:\s*/\s*(?:\d{1,3}(?:,\d{3})+|\d+))?\s*$",
+            first,
+        ):
+            return _extract_numeric_from_text(first)
+
+    return None
+
+
+def _extract_int_relaxed_last_number(text: str) -> Optional[int | float]:
+    """Relaxed parser: return the last numeric token found anywhere in completion text."""
+    if not text:
+        return None
+    normalized = text.replace("−", "-")
+    matches = NUMBER_PATTERN.findall(normalized)
+    if not matches:
+        return None
+    return _coerce_numeric(matches[-1])
+
+
 def _stddev(values: List[float]) -> float:
     if not values:
         return 0.0
@@ -115,8 +173,51 @@ def _stddev(values: List[float]) -> float:
     return (sum((value - mu) ** 2 for value in values) / len(values)) ** 0.5
 
 
-def _generate_answer(model, tokenizer, prompt: str, max_new_tokens: int = 16) -> str:
+def _call_generate_answer_with_compat(
+    model,
+    tokenizer,
+    prompt: str,
+    *,
+    max_new_tokens: int,
+    deterministic_generation: bool,
+    allow_sampling_fallback: bool,
+) -> Any:
+    fn = _generate_answer
+    kwargs: Dict[str, Any] = {"max_new_tokens": max_new_tokens}
+    supports_var_kw = False
+    supports: set[str] = set()
+    try:
+        sig = inspect.signature(fn)
+        for name, param in sig.parameters.items():
+            if param.kind == inspect.Parameter.VAR_KEYWORD:
+                supports_var_kw = True
+            supports.add(name)
+    except (TypeError, ValueError):
+        # Some dynamically patched callables may not have an inspectable signature.
+        # In that case, use the legacy minimal call shape.
+        supports = {"model", "tokenizer", "prompt", "max_new_tokens"}
+
+    if supports_var_kw or "deterministic_generation" in supports:
+        kwargs["deterministic_generation"] = deterministic_generation
+    if supports_var_kw or "allow_sampling_fallback" in supports:
+        kwargs["allow_sampling_fallback"] = allow_sampling_fallback
+    if supports_var_kw or "return_metadata" in supports:
+        kwargs["return_metadata"] = True
+    return fn(model, tokenizer, prompt, **kwargs)
+
+
+def _generate_answer(
+    model,
+    tokenizer,
+    prompt: str,
+    max_new_tokens: int = 16,
+    *,
+    deterministic_generation: bool = True,
+    allow_sampling_fallback: bool = True,
+    return_metadata: bool = False,
+) -> str | tuple[str, Dict[str, Any]]:
     device = "cuda" if torch.cuda.is_available() else "cpu"
+
     def _generate(do_sample: bool, temperature: float) -> str:
         inputs = tokenizer(prompt, return_tensors="pt").to(device)
         if inputs["input_ids"].shape[-1] == 0:
@@ -144,40 +245,210 @@ def _generate_answer(model, tokenizer, prompt: str, max_new_tokens: int = 16) ->
             text = decoded[len(prompt) :].strip()
         return text
 
-    generated = _generate(do_sample=False, temperature=0.0)
+    generation_meta: Dict[str, Any] = {
+        "sampling_fallback_used": False,
+        "empty_generation": False,
+        "deterministic_generation": deterministic_generation,
+        "allow_sampling_fallback": allow_sampling_fallback,
+    }
+    if deterministic_generation:
+        generated = _generate(do_sample=False, temperature=0.0)
+    else:
+        generated = _generate(do_sample=True, temperature=0.7)
     if not generated:
+        generation_meta["empty_generation"] = True
         # Deterministic decoding can immediately emit EOS for small models
-        # (notably GPT-2).  Retry with mild sampling to force a token.
-        try:
-            generated = _generate(do_sample=True, temperature=0.7)
-        except Exception:
-            # Keep the evaluation running; an empty output is recorded as
-            # unparseable instead of aborting the whole job.
-            generated = ""
+        # (notably GPT-2). Optionally retry with mild sampling to force a token.
+        if allow_sampling_fallback:
+            try:
+                generated = _generate(do_sample=True, temperature=0.7)
+                generation_meta["sampling_fallback_used"] = True
+            except Exception:
+                # Keep the evaluation running; an empty output is recorded as
+                # unparseable instead of aborting the whole job.
+                generated = ""
+    if return_metadata:
+        return generated, generation_meta
     return generated
 
 
-def evaluate_bundle(model, tokenizer, bundle: DatasetBundle) -> Dict:
+def _ensure_batch_padding_token(tokenizer) -> int:
+    pad_token_id = tokenizer.pad_token_id
+    if pad_token_id is not None:
+        return int(pad_token_id)
+    eos_id = tokenizer.eos_token_id
+    if eos_id is not None:
+        try:
+            tokenizer.pad_token = tokenizer.eos_token
+        except Exception:
+            pass
+        return int(eos_id)
+    return 0
+
+
+def _generate_answers_batch(
+    model,
+    tokenizer,
+    prompts: List[str],
+    *,
+    max_new_tokens: int,
+    deterministic_generation: bool,
+    allow_sampling_fallback: bool,
+) -> List[tuple[str, Dict[str, Any]]]:
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    pad_token_id = _ensure_batch_padding_token(tokenizer)
+    if not prompts:
+        return []
+
+    def _run_generate(prompt_batch: List[str], *, do_sample: bool, temperature: float) -> List[str]:
+        inputs = tokenizer(prompt_batch, return_tensors="pt", padding=True).to(device)
+        attention_mask = inputs.get("attention_mask")
+        if attention_mask is None:
+            input_lengths = torch.full(
+                (inputs["input_ids"].shape[0],),
+                inputs["input_ids"].shape[1],
+                dtype=torch.long,
+                device=inputs["input_ids"].device,
+            )
+        else:
+            input_lengths = attention_mask.sum(dim=-1)
+        with torch.no_grad():
+            generate_kwargs = {
+                **inputs,
+                "max_new_tokens": max_new_tokens,
+                "min_new_tokens": 1,
+                "do_sample": do_sample,
+                "pad_token_id": pad_token_id,
+                "use_cache": False,
+                "remove_invalid_values": True,
+            }
+            if do_sample:
+                generate_kwargs["temperature"] = temperature
+                generate_kwargs["renormalize_logits"] = True
+            output_ids = model.generate(**generate_kwargs)
+        texts: List[str] = []
+        for row_idx, prompt in enumerate(prompt_batch):
+            input_len = int(input_lengths[row_idx].item())
+            row_out = output_ids[row_idx]
+            new_token_ids = row_out[input_len:]
+            text = tokenizer.decode(new_token_ids, skip_special_tokens=True).strip()
+            if not text:
+                decoded = tokenizer.decode(row_out, skip_special_tokens=True)
+                text = decoded[len(prompt) :].strip()
+            texts.append(text)
+        return texts
+
+    do_sample = not deterministic_generation
+    generated_batch = _run_generate(prompts, do_sample=do_sample, temperature=0.7 if do_sample else 0.0)
+    out: List[tuple[str, Dict[str, Any]]] = []
+    for prompt, generated in zip(prompts, generated_batch):
+        meta = {
+            "sampling_fallback_used": False,
+            "empty_generation": (generated == ""),
+            "deterministic_generation": deterministic_generation,
+            "allow_sampling_fallback": allow_sampling_fallback,
+        }
+        if not generated and allow_sampling_fallback:
+            retry_out = _generate_answer(
+                model,
+                tokenizer,
+                prompt,
+                max_new_tokens=max_new_tokens,
+                deterministic_generation=False,
+                allow_sampling_fallback=False,
+                return_metadata=True,
+            )
+            if isinstance(retry_out, tuple):
+                retry_generated, retry_meta = retry_out
+            else:  # pragma: no cover - compatibility guard
+                retry_generated = retry_out
+                retry_meta = {"sampling_fallback_used": False, "empty_generation": (retry_generated == "")}
+            generated = retry_generated
+            meta["sampling_fallback_used"] = bool(retry_meta.get("sampling_fallback_used", True))
+            meta["empty_generation"] = bool(retry_meta.get("empty_generation", retry_generated == ""))
+        out.append((generated, meta))
+    return out
+
+
+def evaluate_bundle(
+    model,
+    tokenizer,
+    bundle: DatasetBundle,
+    *,
+    parse_mode: str = "default",
+    max_new_tokens: int = 16,
+    deterministic_generation: bool = True,
+    allow_sampling_fallback: bool = True,
+    batch_size: int = 1,
+) -> Dict:
     results = []
     correct = 0
     evaluated = 0
     total = len(bundle.prompts)
-    for idx, prompt in enumerate(bundle.prompts):
-        answer = bundle.answers[idx] if bundle.answers else None
-        generated = _generate_answer(model, tokenizer, prompt)
-        prediction = _extract_int(generated)
-        entry = {
-            "prompt": prompt,
-            "generated": generated,
-            "parsed": prediction,
-            "target": answer,
-        }
-        if answer is not None and prediction is not None:
-            evaluated += 1
-            if prediction == answer:
-                correct += 1
-            entry["correct"] = prediction == answer
-        results.append(entry)
+    sampling_fallback_count = 0
+    empty_generation_count = 0
+    batch_size = max(int(batch_size), 1)
+    for start in range(0, total, batch_size):
+        end = min(total, start + batch_size)
+        prompts = bundle.prompts[start:end]
+        if batch_size == 1:
+            generated_with_meta = []
+            for prompt in prompts:
+                generated_out = _call_generate_answer_with_compat(
+                    model,
+                    tokenizer,
+                    prompt,
+                    max_new_tokens=max_new_tokens,
+                    deterministic_generation=deterministic_generation,
+                    allow_sampling_fallback=allow_sampling_fallback,
+                )
+                if isinstance(generated_out, tuple):
+                    generated, generation_meta = generated_out
+                else:
+                    generated = generated_out
+                    generation_meta = {
+                        "sampling_fallback_used": False,
+                        "empty_generation": (generated == ""),
+                    }
+                generated_with_meta.append((generated, generation_meta))
+        else:
+            generated_with_meta = _generate_answers_batch(
+                model,
+                tokenizer,
+                prompts,
+                max_new_tokens=max_new_tokens,
+                deterministic_generation=deterministic_generation,
+                allow_sampling_fallback=allow_sampling_fallback,
+            )
+
+        for offset, (generated, generation_meta) in enumerate(generated_with_meta):
+            idx = start + offset
+            prompt = bundle.prompts[idx]
+            answer = bundle.answers[idx] if bundle.answers else None
+            if generation_meta.get("sampling_fallback_used"):
+                sampling_fallback_count += 1
+            if generation_meta.get("empty_generation"):
+                empty_generation_count += 1
+            if parse_mode == "strict_final_numeric":
+                prediction = _extract_int_strict_final(generated)
+            elif parse_mode == "relaxed_last_number":
+                prediction = _extract_int_relaxed_last_number(generated)
+            else:
+                prediction = _extract_int(generated)
+            entry = {
+                "prompt": prompt,
+                "generated": generated,
+                "parsed": prediction,
+                "target": answer,
+                "parse_mode": parse_mode,
+                "generation_meta": generation_meta,
+            }
+            if answer is not None and prediction is not None:
+                evaluated += 1
+                if prediction == answer:
+                    correct += 1
+                entry["correct"] = prediction == answer
+            results.append(entry)
     accuracy = correct / evaluated if evaluated else None
     accuracy_all = (correct / total) if (bundle.answers is not None and total > 0) else None
     parse_rate = (evaluated / total) if total else 0.0
@@ -187,6 +458,15 @@ def evaluate_bundle(model, tokenizer, bundle: DatasetBundle) -> Dict:
         "evaluated": evaluated,
         "total": total,
         "parse_rate": parse_rate,
+        "parse_mode": parse_mode,
+        "generation_policy": {
+            "deterministic_generation": deterministic_generation,
+            "allow_sampling_fallback": allow_sampling_fallback,
+            "max_new_tokens": max_new_tokens,
+            "batch_size": batch_size,
+            "sampling_fallback_count": sampling_fallback_count,
+            "empty_generation_count": empty_generation_count,
+        },
         "results": results,
     }
 
@@ -358,12 +638,16 @@ class ExperimentRunner:
         self._save_results(part_dir / "neuron_sweep.json", {"records": sweep_records})
 
     def _simple_metric(self, model, tokenizer, prompts: List[str], seed: int) -> float:
+        """Cheap generation-health metric used for dev-time comparisons.
+
+        This intentionally tracks parse-valid rate, not numeric answer magnitude.
+        """
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
-        scores = []
+        parse_valid: List[float] = []
         for prompt in prompts[:5]:
             generated = _generate_answer(model, tokenizer, prompt)
             parsed = _extract_int(generated)
-            scores.append(float(parsed or 0))
-        return sum(scores) / len(scores) if scores else 0.0
+            parse_valid.append(1.0 if parsed is not None else 0.0)
+        return sum(parse_valid) / len(parse_valid) if parse_valid else 0.0

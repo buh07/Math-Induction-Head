@@ -152,7 +152,7 @@ This is the new mainline program.
 
 Create datasets with explicit buckets and annotations:
 - Addition: no-carry / single-carry / cascading-carry / length extrapolation
-- Subtraction: no-borrow / borrow / cascading-borrow / negatives
+- Subtraction: no-borrow / single-borrow / cascading-borrow / negatives
 - Multiplication: table lookup / partial-product / carry in partial sums / multi-digit composition
 
 Track metrics beyond final accuracy:
@@ -189,6 +189,18 @@ Compare direct-answer and CoT prompts on matched arithmetic instances:
 - whether CoT benefits are explained by better heuristic gating/composition vs stronger induction-like scaffolding alone
 
 ## Part 8: Decision Gates, Failure Modes, and Interpretation Rules
+
+### Phase 2.0 checkpoint status (2026-03-03)
+
+The latest Phase 2 addition-only run completed operationally (`EXIT_CODE=0`) at:
+- `logs/phase2/20260302_222145_operator_bottleneck_full_gpu2.status`
+- `results/phase2/operator_bottleneck_run_20260302_222145_gpu2/phase2_gate_summary.json`
+
+However, this checkpoint is **provisional**, not publication-grade mechanistic evidence:
+- `cot_gating_evidence_gate` is not satisfied because CoT compare was disabled (`status: not_implemented` in `phase2_cot_compare/addition.json`).
+- localization effects are near-zero in the gate summary (`effect_nonzero_rate_max = 0.0` with tiny answer-token probability deltas).
+- baseline addition accuracy is near floor with parse rate near 1.0, so correctness remains the unresolved bottleneck.
+- some attention interventions show extreme shifts, which require dedicated sanity/leakage checks before interpreting specificity as mechanistic.
 
 ### Gate philosophy (carried forward from Plan A)
 

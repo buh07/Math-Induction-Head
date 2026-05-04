@@ -15,6 +15,14 @@ def _bootstrap_samples(data: Sequence[float], num_samples: int, rng: random.Rand
     ]
 
 
+def quantile_index(sample_count: int, quantile: float) -> int:
+    """Return a stable 0-based quantile index using floor(q * (n - 1))."""
+    if sample_count <= 0:
+        raise ValueError("sample_count must be positive")
+    q = min(max(float(quantile), 0.0), 1.0)
+    return int(math.floor(q * (sample_count - 1)))
+
+
 @dataclass
 class StatisticalSummary:
     mean: float
@@ -54,8 +62,8 @@ def summarize(
     rng = random.Random(seed)
     bootstrap_data = _bootstrap_samples(intervention_scores, num_bootstrap, rng)
     bootstrap_data.sort()
-    ci_low = bootstrap_data[int(0.025 * num_bootstrap)]
-    ci_high = bootstrap_data[int(0.975 * num_bootstrap)]
+    ci_low = bootstrap_data[quantile_index(num_bootstrap, 0.025)]
+    ci_high = bootstrap_data[quantile_index(num_bootstrap, 0.975)]
     return StatisticalSummary(
         mean=intervention_mean,
         std=std,

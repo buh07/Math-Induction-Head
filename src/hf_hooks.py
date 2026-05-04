@@ -8,6 +8,12 @@ from typing import Dict, Iterable, List, Optional
 import torch
 
 from .hooks import AttentionHookConfig, NeuronHookConfig, summarize_attention_configs
+from .model_introspection import (
+    get_attention_module,
+    get_mlp_module,
+    infer_head_count,
+    locate_layers,
+)
 
 
 def _scale_output(output, scale: float):
@@ -52,7 +58,7 @@ class HFHookApplier:
     ):
         self.model = model
         self.handles: List = []
-        self.layers = self._locate_layers(model)
+        self.layers = locate_layers(model)
         self.strict_attention_heads = strict_attention_heads
         if hook_debug_counters is None:
             hook_debug_counters = {}
@@ -110,10 +116,10 @@ class HFHookApplier:
 
     def _get_attention_module(self, layer_index: int):
         layer = self.layers[layer_index]
-        for attr in ("self_attn", "attention", "attn"):
-            if hasattr(layer, attr):
-                return getattr(layer, attr)
-        raise AttributeError(f"Layer {layer_index} lacks a recognized attention module")
+        module = get_attention_module(layer)
+        if module is None:
+            raise AttributeError(f"Layer {layer_index} lacks a recognized attention module")
+        return module
 
     def _get_attention_output_projection(self, module):
         for attr in ("o_proj", "c_proj", "dense", "out_proj"):
@@ -123,10 +129,10 @@ class HFHookApplier:
 
     def _get_mlp_module(self, layer_index: int):
         layer = self.layers[layer_index]
-        for attr in ("mlp", "feed_forward", "ffn", "parallel_attn"):
-            if hasattr(layer, attr):
-                return getattr(layer, attr)
-        raise AttributeError(f"Layer {layer_index} lacks a recognized MLP/FFN module")
+        module = get_mlp_module(layer)
+        if module is None:
+            raise AttributeError(f"Layer {layer_index} lacks a recognized MLP/FFN module")
+        return module
 
     def _get_mlp_output_projection(self, module):
         for attr in ("down_proj", "c_proj", "dense_4h_to_h", "fc2", "proj_out"):
@@ -272,35 +278,7 @@ class HFHookApplier:
 
     @staticmethod
     def _infer_head_count(module) -> Optional[int]:
-        for attr in ("num_heads", "num_attention_heads", "n_head", "n_heads"):
-            value = getattr(module, attr, None)
-            if isinstance(value, int) and value > 0:
-                return value
-        config = getattr(module, "config", None)
-        if config is not None:
-            for attr in ("num_attention_heads", "num_heads", "n_head", "n_heads"):
-                value = getattr(config, attr, None)
-                if isinstance(value, int) and value > 0:
-                    return value
-        head_dim = getattr(module, "head_dim", None)
-        if isinstance(head_dim, int) and head_dim > 0:
-            for proj_attr, dim_attr in (("o_proj", "in_features"), ("q_proj", "out_features")):
-                proj = getattr(module, proj_attr, None)
-                dim = getattr(proj, dim_attr, None) if proj is not None else None
-                if isinstance(dim, int) and dim > 0 and dim % head_dim == 0:
-                    return dim // head_dim
-        return None
-
-    @staticmethod
-    def _locate_layers(model):
-        for attr in ("model", "transformer", "gpt_neox"):
-            if hasattr(model, attr):
-                container = getattr(model, attr)
-                if hasattr(container, "layers"):
-                    return container.layers
-                if hasattr(container, "h"):
-                    return container.h
-        raise AttributeError("Could not locate layer stack on model")
+        return infer_head_count(module)
 
 
 @contextmanager

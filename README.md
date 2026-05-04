@@ -24,6 +24,39 @@ Primary artifact anchors (repo root = `Math Induction Head/`):
 - `results/phase1/canonical/head_validity_run_20260225_120553_gpu01/phase3_gate_summary.json`
 - `results/phase1/canonical/head_validity_run_20260225_120553_gpu01/phase4_arithmetic_sanity.json`
 
+## Phase 2.0 Checkpoint (Most Recent Run: 2026-03-03)
+
+Latest run artifacts:
+- `logs/phase2/20260302_222145_operator_bottleneck_full_gpu2.status`
+- `results/phase2/operator_bottleneck_run_20260302_222145_gpu2/phase2_gate_summary.json`
+- `results/phase2/operator_bottleneck_run_20260302_222145_gpu2/legacy_audit.json`
+- `results/phase2/operator_bottleneck_run_20260302_222145_gpu2/phase2_interventions/addition_attention_heads.json`
+- `results/phase2/operator_bottleneck_run_20260302_222145_gpu2/phase2_cot_compare/addition.json`
+
+Current interpretation:
+- Operationally complete (`EXIT_CODE=0`), but scientifically **provisional**.
+- `dataset_bucket_gate`, `localization_validity_gate`, and `operator_specificity_gate` report pass.
+- `cot_gating_evidence_gate` reports fail (`status: not_implemented`) because CoT compare was disabled in config.
+- This run used pre-hardening gate semantics (`phase2_operator_bottleneck_gate_summary_v1`) and is retained only as a provisional checkpoint.
+- Legacy audit sidecar explicitly overrides readiness (`audited_ready_for_multimodel: false`) and documents blocking reasons (`results/phase2/operator_bottleneck_run_20260302_222145_gpu2/legacy_audit.json`).
+
+Hardening changes now implemented in code (pending rerun artifacts):
+- Gate summary upgraded to `phase2_operator_bottleneck_gate_summary_v2` (`schema_revision: 2.1`) with `derived_thresholds`, `required_gates_policy`, `scope_warnings`, `scope_blocks`, `overall.readiness_block_reasons`, and `intervention_sanity_gate`.
+- Localization gate now requires non-zero effect-rate and absolute probability-delta floors, minimum target coverage, and required robustness coverage for enabled component families.
+- Specificity gate now uses intervention-signed semantics (necessity-style ablation harm, sufficiency-style amplification gain), supports calibrated CI floors, preregistered primary-set policy, and optional multiplicity blocking.
+- Specificity multiplicity blocking now reads preregistered-primary q-values (`q_value_primary`) instead of letting non-primary comparisons control blocking outcomes.
+- Target-operator localization/evaluation leakage is reduced with explicit selection/evaluation dataset splits (`datasets.target_operator_selection_eval_split`).
+- Readiness now enforces required gates policy, including CoT gate when `cot_required_for_readiness: true`.
+- Intervention outputs now include per-dataset `sanity_flags` and `prediction_samples` for anomaly triage.
+- Intervention outputs now include `analysis.primary_set_results`, `analysis.directionality_checks`, and reporting-only `analysis.multiplicity_report` (BH-FDR default).
+- CoT gate now supports minimum paired-count thresholds, parse-rate floor checks, optional CI-excludes-zero requirement, and deterministic stratified pair sampling.
+- Localization threshold calibration now supports combined `target_shuffle+family_heldout` null policies.
+- Full runs now emit `phase2_intervention_anomaly_report.json` to centralize flagged-condition forensic evidence.
+- Full runs now emit preregistration/power/parser audit artifacts: `preregistration_used.json`, `power_analysis_report.json`, `parser_audit.json`.
+- Legacy v1 summaries are now audited via immutable sidecars/index:
+  - `scripts/common/audit_phase2_legacy_artifacts.py`
+  - `results/phase2/legacy_audit_index.json`
+
 ## Phase Reorganization / Migration Notes
 
 This repository was reorganized to make the phase split explicit.
@@ -161,7 +194,7 @@ The active program is now an operator-circuit program, not an induction-only pro
 
 Build/expand arithmetic datasets with explicit buckets:
 - addition: no-carry, single-carry, cascading-carry, digit-length extrapolation
-- subtraction: no-borrow, borrow, cascading-borrow, negatives
+- subtraction: no-borrow, single-borrow, cascading-borrow, negatives
 - multiplication: table lookup cases, partial-product carry, multi-digit composition
 - later: division/modulo and mixed-operation composition
 
@@ -314,7 +347,19 @@ Failure:
 
 ## Running the Next Tranche (Operator-Circuit Pivot)
 
-The operator-bottleneck tranche is **Phase 2 (Operator Heuristic Bottleneck Mainline)**. The orchestration script for the full pivot program is **not implemented yet**. Use this section as the operational contract for the upcoming implementation.
+The operator-bottleneck tranche is **Phase 2 (Operator Heuristic Bottleneck Mainline)**. The orchestration entrypoint is implemented at `scripts/phase2/run_operator_bottleneck_suite.py`.
+
+- Implemented now:
+  - dataset-bucket generation + manifests/diagnostics (`--stage datasets`)
+  - arithmetic localization runs (attention heads / MLP neurons / optional layer blocks)
+  - operator intervention sweeps + cross-operator specificity matrix
+  - CoT direct-vs-CoT comparison runs with optional component-sensitivity check
+  - Phase 2 run manifest + gate-summary outputs
+  - safe batch auto-tuning with numeric equivalence checks (`runtime.batch_autotune` + CLI overrides)
+  - operator subset execution (`--operators ...`) and explicit shard mode (`--operator-shard-mode`)
+  - deterministic shard merge utility (`scripts/phase2/merge_operator_shards.py`)
+- CPU-only fallback mode:
+  - `--scaffold-gpu-stages` writes schema-valid placeholder outputs for GPU-backed stages when you only want to validate configs/artifact structure
 
 ### Prerequisites (same operational baseline as Plan A)
 
@@ -326,7 +371,7 @@ The operator-bottleneck tranche is **Phase 2 (Operator Heuristic Bottleneck Main
 ### Planned operator-bucket inputs (required before full run)
 
 - addition buckets: no-carry / single-carry / cascading-carry
-- subtraction buckets: no-borrow / borrow / cascading-borrow
+- subtraction buckets: no-borrow / single-borrow / cascading-borrow
 - multiplication buckets: table / partial-product / carry in partial sums
 - metadata per prompt:
   - operator label
@@ -334,7 +379,7 @@ The operator-bottleneck tranche is **Phase 2 (Operator Heuristic Bottleneck Main
   - expected answer
   - (where relevant) per-digit targets and carry/borrow annotations
 
-### Placeholder command template (not implemented yet)
+### CPU-first command template (implemented)
 
 ```bash
 cd '/scratch2/f004ndc/Math Induction Head'
@@ -343,14 +388,108 @@ LOG="logs/phase2/${TS}_operator_bottleneck.log"
 STATUS="logs/phase2/${TS}_operator_bottleneck.status"
 OUT="results/phase2/operator_bottleneck_run_${TS}"
 
-# Placeholder interface - expected future script, not present yet.
-# Do not run until implemented.
+# CPU-first run (dataset stage only, no model load)
 mkdir -p logs/phase2 results/phase2
+OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 TOKENIZERS_PARALLELISM=false \
 .venv/bin/python scripts/phase2/run_operator_bottleneck_suite.py \
   --model meta-llama/Meta-Llama-3-8B \
-  --devices 0,1 \
-  --dataset-config configs/phase2/operator_buckets_llama3.example.yaml \
+  --devices 0 \
+  --dataset-config configs/phase2/operator_buckets_llama3.yaml \
+  --stage datasets \
+  --low-cpu-mode \
+  --max-cpu-threads 1 \
   --output-root "$OUT"
+```
+
+Use `--stage full` to run the full Phase 2 pipeline (datasets -> localization -> interventions -> CoT comparison) once CPU/GPU resources are available.
+Use `--scaffold-gpu-stages` with `--stage full` if you want placeholder GPU-stage outputs without loading a model.
+
+Batch autotune + operator subset example:
+
+```bash
+cd '/scratch2/f004ndc/Math Induction Head'
+TS=$(date +%Y%m%d_%H%M%S)
+OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 TOKENIZERS_PARALLELISM=false \
+.venv/bin/python scripts/phase2/run_operator_bottleneck_suite.py \
+  --model meta-llama/Meta-Llama-3-8B \
+  --devices 0 \
+  --dataset-config configs/phase2/operator_buckets_llama3_full_operators.yaml \
+  --stage full \
+  --operators addition,subtraction \
+  --operator-shard-mode \
+  --batch-autotune \
+  --batch-autotune-stages localize,intervene,cot \
+  --batch-equivalence-check \
+  --low-cpu-mode \
+  --max-cpu-threads 2 \
+  --output-root "results/phase2/operator_bottleneck_run_${TS}_add_sub_shard"
+```
+
+tmux operator sharding launcher (multi-GPU):
+
+```bash
+cd '/scratch2/f004ndc/Math Induction Head'
+GPU_LIST=0,1 \
+MODEL=meta-llama/Meta-Llama-3-8B \
+DATASET_CONFIG=configs/phase2/operator_buckets_llama3_full_operators_campaign.yaml \
+BATCH_SIZE=8 \
+scripts/phase2/launch_operator_shards_tmux.sh
+```
+
+Merge shard outputs into canonical merged artifacts:
+
+```bash
+cd '/scratch2/f004ndc/Math Induction Head'
+.venv/bin/python scripts/phase2/merge_operator_shards.py \
+  --shard-dirs \
+    results/phase2/operator_shards_<timestamp>/addition \
+    results/phase2/operator_shards_<timestamp>/subtraction \
+    results/phase2/operator_shards_<timestamp>/multiplication \
+  --output-root results/phase2/operator_shards_<timestamp>/merged
+```
+
+Full-operator (addition + subtraction + multiplication) command template:
+
+```bash
+cd '/scratch2/f004ndc/Math Induction Head'
+TS=$(date +%Y%m%d_%H%M%S)
+OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 TOKENIZERS_PARALLELISM=false \
+.venv/bin/python scripts/phase2/run_operator_bottleneck_suite.py \
+  --model meta-llama/Meta-Llama-3-8B \
+  --devices 0 \
+  --dataset-config configs/phase2/operator_buckets_llama3_full_operators.yaml \
+  --stage full \
+  --low-cpu-mode \
+  --max-cpu-threads 2 \
+  --output-root "results/phase2/operator_bottleneck_run_${TS}_fullops"
+```
+
+Campaign-ready config (counts/bucket=256, seeds=0/1, multiplicity blocking enabled):
+
+```bash
+cd '/scratch2/f004ndc/Math Induction Head'
+TS=$(date +%Y%m%d_%H%M%S)
+OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 TOKENIZERS_PARALLELISM=false \
+.venv/bin/python scripts/phase2/run_operator_bottleneck_suite.py \
+  --model meta-llama/Meta-Llama-3-8B \
+  --devices 0 \
+  --dataset-config configs/phase2/operator_buckets_llama3_full_operators_campaign.yaml \
+  --stage full \
+  --low-cpu-mode \
+  --max-cpu-threads 4 \
+  --output-root "results/phase2/operator_bottleneck_run_${TS}_campaign"
+```
+
+Legacy/run-audit helpers:
+
+```bash
+cd '/scratch2/f004ndc/Math Induction Head'
+.venv/bin/python scripts/common/audit_phase2_legacy_artifacts.py --results-root results/phase2
+.venv/bin/python scripts/common/audit_parser_behavior.py --run-dir results/phase2/<run_id>
+.venv/bin/python scripts/common/power_analysis.py \
+  --prereg configs/phase2/preregistration.yaml \
+  --dataset-manifest results/phase2/<run_id>/dataset_manifest.json \
+  --output results/phase2/<run_id>/power_analysis_report.json
 ```
 
 ### What the next tranche must measure (minimum)
@@ -359,6 +498,10 @@ mkdir -p logs/phase2 results/phase2
 - necessity vs sufficiency for localized operator-specific components
 - cross-operator specificity matrix
 - direct-answer vs CoT circuit recruitment differences (CoT gating/composition)
+
+Hardening rule after the 2026-03-03 checkpoint:
+- do not treat `ready_for_multimodel_next_tranche = true` as sufficient by itself until CoT gate execution, non-trivial localization-effect thresholds, and intervention sanity checks are all explicitly satisfied.
+- for legacy v1 runs, decision-making must use `legacy_audit.json` (`audited_ready_for_multimodel`) rather than raw gate-summary readiness.
 
 ## Artifact Layout and How to Read Results
 

@@ -3,9 +3,36 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Mapping, Optional, Tuple
 
 import torch
+
+
+def _tokenizer_is_usable(tokenizer) -> tuple[bool, str]:
+    """Return whether a tokenizer can produce non-empty token ids."""
+    vocab_size = getattr(tokenizer, "vocab_size", None)
+    if isinstance(vocab_size, int) and vocab_size <= 0:
+        return False, f"invalid_vocab_size:{vocab_size}"
+    try:
+        encoded = tokenizer("hello", add_special_tokens=False)
+    except Exception as exc:
+        return False, f"encode_error:{exc}"
+    token_ids: Any = None
+    if isinstance(encoded, Mapping):
+        token_ids = encoded.get("input_ids")
+    elif hasattr(encoded, "input_ids"):
+        token_ids = getattr(encoded, "input_ids")
+    if token_ids is None:
+        return False, "missing_input_ids_for_sentinel"
+    if hasattr(token_ids, "numel"):
+        if int(token_ids.numel()) <= 0:
+            return False, "empty_tokenization_for_sentinel"
+    elif isinstance(token_ids, (list, tuple)):
+        if len(token_ids) <= 0:
+            return False, "empty_tokenization_for_sentinel"
+    else:
+        return False, "empty_tokenization_for_sentinel"
+    return True, "ok"
 
 
 def load_local_model(
@@ -14,6 +41,7 @@ def load_local_model(
     local_files_only: bool = True,
     model_path: Optional[str] = None,
     tokenizer_path: Optional[str] = None,
+    allow_tokenizer_download_fallback: bool = True,
 ) -> Tuple[torch.nn.Module, AutoTokenizer]:
     from transformers import AutoModelForCausalLM, AutoTokenizer
     try:
@@ -47,6 +75,23 @@ def load_local_model(
     if tokenizer_path is None:
         tokenizer_kwargs["cache_dir"] = str(cache_path)
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_load_path, **tokenizer_kwargs)
+    tokenizer_ok, tokenizer_reason = _tokenizer_is_usable(tokenizer)
+    if (
+        not tokenizer_ok
+        and local_files_only
+        and allow_tokenizer_download_fallback
+    ):
+        # Some local cache snapshots can be missing GPT-style tokenizer vocab/merges.
+        # Retry with remote lookup enabled to repair tokenizer assets in cache.
+        fallback_kwargs = dict(tokenizer_kwargs)
+        fallback_kwargs["local_files_only"] = False
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_load_path, **fallback_kwargs)
+        tokenizer_ok, tokenizer_reason = _tokenizer_is_usable(tokenizer)
+    if not tokenizer_ok:
+        raise RuntimeError(
+            f"Tokenizer for '{model_name}' is unusable ({tokenizer_reason}). "
+            "If this model should run offline, refresh tokenizer assets in cache."
+        )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     model.eval()

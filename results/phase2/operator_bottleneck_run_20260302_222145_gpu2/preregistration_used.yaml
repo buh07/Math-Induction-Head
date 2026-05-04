@@ -1,0 +1,42 @@
+schema_version: phase2_preregistration_v1
+title: "Phase 2 Operator Heuristic Bottleneck Mainline"
+updated_at: "2026-03-05"
+
+primary_outcomes:
+  - delta_vs_random_accuracy_all
+
+primary_comparison_grid:
+  component_set: top
+  interventions: [ablation, amplification]
+  k_values: [5, 10]
+  scales: [0.0, 1.25]
+
+minimum_effect_size_of_interest:
+  delta_vs_random_accuracy_all: 0.05
+
+target_power: 0.80
+alpha: 0.05
+
+multiplicity_policy:
+  method: bh_fdr
+  blocking: true
+  q_max: 0.10
+  require_complete_primary_coverage: true
+
+planned_sample_sizes:
+  counts_per_bucket: 256
+  operators:
+    addition: 256
+    subtraction: 256
+    multiplication: 256
+
+models:
+  - meta-llama/Meta-Llama-3-8B
+  - google/gemma-2b
+  - gpt2
+
+assumptions:
+  baseline_accuracy: 0.40
+  notes:
+    - "Normal-approximation planning proxy; empirical variance may differ by operator bucket."
+    - "Primary grid and MESI are prerequisites for readiness interpretation."

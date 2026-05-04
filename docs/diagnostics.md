@@ -8,6 +8,28 @@ Repository phase context:
 
 The same gating philosophy used in Phase 1 / Plan A (instrumentation validity -> detector/localizer validity -> control specificity -> arithmetic interpretation) remains the standard for the pivoted operator-bottleneck program.
 
+## Latest Phase 2 checkpoint issues (2026-03-03) to diagnose
+
+Checkpoint artifacts:
+- `results/phase2/operator_bottleneck_run_20260302_222145_gpu2/phase2_gate_summary.json`
+- `results/phase2/operator_bottleneck_run_20260302_222145_gpu2/phase2_interventions/addition_attention_heads.json`
+- `results/phase2/operator_bottleneck_run_20260302_222145_gpu2/phase2_cot_compare/addition.json`
+
+Observed issues that block interpretation:
+- localization gate passed with near-zero effect magnitudes (`effect_nonzero_rate_max = 0.0`).
+- MLP robustness fields were null while localization still reported pass.
+- CoT gate did not produce evidence (`status: not_implemented`).
+- baseline arithmetic remained near floor despite parseable outputs.
+- intervention outputs included extreme condition shifts requiring leakage/sanity checks.
+
+Required diagnostic response:
+- tighten threshold-based gating and fail on numerically negligible effects.
+- require robustness coverage for all enabled component modes.
+- require CoT gate execution before declaring tranche readiness.
+- add explicit sanity checks for implausible intervention jumps.
+- use calibrated thresholds from null/control behavior and persist them in `derived_thresholds`.
+- require explicit non-target operator evidence for operator-specificity pass claims.
+
 ## Instrumentation Primitives (Attention + Neuron Hooks)
 
 Attention and neuron hooks are instrumentation primitives for many experiment families. They are not induction-only machinery.
@@ -39,6 +61,7 @@ Tokenization remains a major confounder for arithmetic experiments, especially w
 - explicit target tokenization success rate
 - single-token target filter rate (for control tasks that require explicit target-token scoring)
 - fallback/context-mismatch counts in prompt-record resolution
+- minimum acceptable answer-target coverage floor in localization runs (avoid ranking on tiny tokenization-surviving subsets)
 
 ### Go / No-Go
 
@@ -71,6 +94,7 @@ These metrics are required for the operator-bottleneck program and should be log
 
 - Do not claim a "math improvement" if the change is explained primarily by parse-rate changes.
 - Do not aggregate across operator buckets without also reporting per-bucket breakdowns.
+- Treat addition-only runs as plumbing checks; they are insufficient for full cross-operator specificity claims.
 
 ## Causal Localization Metrics (Arithmetic-Specific)
 
@@ -156,6 +180,38 @@ Every diagnostic or validity run should emit machine-readable outputs plus enoug
 ### Required outputs (examples)
 
 - phase/gate summary JSON (single source of truth for pass/fail)
+- for Phase 2.1+ runs, include `phase2_operator_bottleneck_gate_summary_v2` fields:
+  - `schema_revision` (`2.1` for the current hardening tranche)
+  - `derived_thresholds`
+  - `required_gates_policy`
+  - `intervention_sanity_gate`
+  - `scope_warnings`
+  - `scope_blocks`
+  - `overall.readiness_block_reasons`
+- intervention anomaly report:
+  - `phase2_intervention_anomaly_report.json`
+  - includes flagged conditions, dataset-level flag reasons, and capped prediction samples for forensic review
+- parser audit:
+  - `parser_audit.json`
+  - includes parse-mode agreement (`default` vs `strict_final_numeric`), ambiguity rate, and adjudication samples
+- prereg/power artifacts:
+  - `preregistration_used.json`
+  - `power_analysis_report.json`
+  - claims should reference MESI/power assumptions from these artifacts, not post-hoc thresholds alone
+- intervention sweep analysis (additive `operator_intervention_sweep_v1` extensions):
+  - `analysis.primary_set_results`
+  - `analysis.directionality_checks`
+  - `analysis.multiplicity_report` (reporting-only in this tranche; includes `q_value_primary` for preregistered-primary blocking semantics)
+- selection/evaluation split diagnostics:
+  - `phase2_selection_eval_split.json` (target-operator selection/evaluation separation to reduce selection-on-evaluation leakage)
+- CoT gate evidence (Phase 2.1+):
+  - minimum paired instance count (`cot_compare.min_pairs`)
+  - parse-rate floor (`cot_compare.parse_rate_min`)
+  - optional CI-excludes-zero requirement for baseline direct-vs-CoT accuracy deltas
+  - deterministic stratified pairing (`cot_compare.stratify_by_dataset`, `cot_compare.sampling_seed`)
+- legacy-v1 run handling:
+  - do not consume `phase2_operator_bottleneck_gate_summary_v1` directly for readiness decisions
+  - require `legacy_audit.json` and `results/phase2/legacy_audit_index.json` overrides
 - detailed per-run JSONs (detector/localizer/control sweeps)
 - manifests and logs
 - optional human-readable summary/report markdown

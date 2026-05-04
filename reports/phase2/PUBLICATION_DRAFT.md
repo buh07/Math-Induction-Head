@@ -66,6 +66,32 @@ Planned methods (not yet executed in this report draft):
 - `gsm_plain_vs_cot_rank_stability ~= 0.964`
 - strongest Phase 3 Top-vs-random amplification effect `~ +0.095` copy-target-prob delta (CI > 0)
 
+## Phase 2.0 Addition MVP Checkpoint (Operationally Complete, Provisional)
+
+### Run status
+
+- Run completed with `EXIT_CODE=0`:
+  - `logs/phase2/20260302_222145_operator_bottleneck_full_gpu2.status`
+- Full output set emitted:
+  - `results/phase2/operator_bottleneck_run_20260302_222145_gpu2/phase2_gate_summary.json`
+  - localization/intervention outputs and specificity matrix artifacts
+- Legacy audit sidecar marks the run as not decision-ready:
+  - `results/phase2/operator_bottleneck_run_20260302_222145_gpu2/legacy_audit.json`
+  - `audited_ready_for_multimodel: false`
+
+### Observed issues (blocking strong claims)
+
+- `cot_gating_evidence_gate` unresolved (`status: not_implemented`) because CoT compare was disabled in config.
+- localization effects are numerically tiny in gate summary despite pass.
+- baseline addition accuracy is near floor while parse rate remains high.
+- attention intervention sweeps include extreme shifts that require dedicated sanity/leakage verification.
+- current gate thresholds are permissive and can over-admit provisional runs.
+- legacy v1 readiness flag can be misleading without sidecar audit overrides.
+
+### Interpretation
+
+This checkpoint validates pipeline execution and artifact plumbing, but it is **not sufficient for mechanistic claim**. Phase 2.1 hardening is required before promoting Phase 2 findings to replication-grade evidence.
+
 ## Arithmetic Sanity Outcomes (Null/Mixed Amplification, Strong Ablation Harm)
 
 ### Baseline arithmetic (Phase 4)
@@ -104,6 +130,7 @@ Induction-like heads appear to function as part of a reusable scaffolding/contro
 - Plan A arithmetic analysis is a minimal sanity rerun, not a full arithmetic-localizer program.
 - The Phase 2 rank-stability metric in Plan A is best interpreted as same-set shuffle invariance, not full resampling robustness.
 - Cross-model replication of the pivoted operator-bottleneck program is pending.
+- Parser-audit and power-analysis artifacts exist in the hardened pipeline, but the provisional legacy run predates those outputs.
 
 ### Claim hygiene
 

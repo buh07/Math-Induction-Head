@@ -33,6 +33,7 @@ from src.induction_detection import (
     topk_rank_stability_spearman,
 )
 from src.model_loader import load_local_model
+from src.statistics import quantile_index
 
 
 @dataclass
@@ -76,6 +77,35 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scales", default="0.0,0.5,1.0,1.25,1.5,2.0")
     parser.add_argument("--downscale-others", default="none,0.9", help="Comma list; use none for no downscale")
     parser.add_argument("--bootstrap-samples", type=int, default=1000)
+    parser.add_argument(
+        "--phase3-primary-interventions",
+        default="ablation,amplification",
+        help="Comma-separated preregistered Phase 3 interventions.",
+    )
+    parser.add_argument(
+        "--phase3-primary-k-values",
+        default="5,10",
+        help="Comma-separated preregistered Phase 3 K values.",
+    )
+    parser.add_argument(
+        "--phase3-primary-scales",
+        default="0.0,1.25,1.5,2.0",
+        help="Comma-separated preregistered Phase 3 scales.",
+    )
+    parser.add_argument(
+        "--phase3-multiplicity",
+        choices=["none", "bh_fdr"],
+        default="bh_fdr",
+        help="Multiplicity policy for preregistered Phase 3 checks.",
+    )
+    parser.add_argument("--phase3-q-max", type=float, default=0.10, help="Multiplicity q-value threshold.")
+    parser.add_argument(
+        "--phase3-require-complete-primary-coverage",
+        dest="phase3_require_complete_primary_coverage",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Require complete preregistered row coverage before multiplicity pass.",
+    )
     parser.add_argument("--skip-gsm-detector", action="store_true", help="Skip gsm8k plain/cot detector comparison")
     parser.add_argument("--run-arithmetic-even-if-gates-fail", action="store_true")
     return parser.parse_args()
@@ -102,6 +132,10 @@ def _parse_optional_float_list(text: str) -> List[Optional[float]]:
     return values
 
 
+def _parse_str_list(text: str) -> List[str]:
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
 def _json_dump(path: Path, payload: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -119,8 +153,8 @@ def _bootstrap_ci(values: Sequence[float], *, seed: int = 0, num_samples: int = 
     means.sort()
     return {
         "mean": sum(values) / len(values),
-        "ci_low": means[int(0.025 * num_samples)],
-        "ci_high": means[int(0.975 * num_samples)],
+        "ci_low": means[quantile_index(num_samples, 0.025)],
+        "ci_high": means[quantile_index(num_samples, 0.975)],
     }
 
 
@@ -144,8 +178,8 @@ def _bootstrap_median_diff_ci(
     median = paired_sorted[n // 2] if n % 2 else 0.5 * (paired_sorted[n // 2 - 1] + paired_sorted[n // 2])
     return {
         "median_diff": float(median),
-        "ci_low": float(medians[int(0.025 * num_samples)]),
-        "ci_high": float(medians[int(0.975 * num_samples)]),
+        "ci_low": float(medians[quantile_index(num_samples, 0.025)]),
+        "ci_high": float(medians[quantile_index(num_samples, 0.975)]),
     }
 
 
@@ -579,93 +613,263 @@ def _unpaired_mean_diff_ci(
     mean_diff = (sum(a) / len(a)) - (sum(b) / len(b))
     return {
         "mean": mean_diff,
-        "ci_low": diffs[int(0.025 * num_samples)],
-        "ci_high": diffs[int(0.975 * num_samples)],
+        "ci_low": diffs[quantile_index(num_samples, 0.025)],
+        "ci_high": diffs[quantile_index(num_samples, 0.975)],
     }
 
 
-def _evaluate_phase3_gates(control_results: Dict[str, Any], *, bootstrap_samples: int, seed: int) -> Dict[str, Any]:
-    runs = control_results.get("runs", [])
-    top_vs_random_checks: List[Dict[str, Any]] = []
-    passed = False
+def _approx_two_sided_p_from_ci(*, mean: float, ci_low: float, ci_high: float) -> Optional[float]:
+    width = float(ci_high) - float(ci_low)
+    if width <= 0:
+        return None
+    se = width / (2.0 * 1.96)
+    if se <= 0:
+        return None
+    z = abs(float(mean)) / se
+    return float(math.erfc(z / math.sqrt(2.0)))
 
-    for run in runs:
-        if run.get("skipped") or run["set"] != "top":
+
+def _bh_fdr(rows: Sequence[Dict[str, Any]], *, p_key: str = "p_value") -> List[Dict[str, Any]]:
+    with_p = [(idx, float(row[p_key])) for idx, row in enumerate(rows) if row.get(p_key) is not None]
+    if not with_p:
+        return [dict(row, q_value=None) for row in rows]
+    m = len(with_p)
+    with_p_sorted = sorted(with_p, key=lambda x: x[1])
+    q_vals = [0.0] * m
+    running = 1.0
+    for i in range(m - 1, -1, -1):
+        rank = i + 1
+        p = with_p_sorted[i][1]
+        q = min(running, p * m / rank)
+        running = q
+        q_vals[i] = q
+    idx_to_q = {with_p_sorted[i][0]: q_vals[i] for i in range(m)}
+    return [dict(row, q_value=idx_to_q.get(i)) for i, row in enumerate(rows)]
+
+
+def _evaluate_phase3_gates(
+    control_results: Dict[str, Any],
+    *,
+    bootstrap_samples: int,
+    seed: int,
+    primary_interventions: Sequence[str],
+    primary_k_values: Sequence[int],
+    primary_scales: Sequence[float],
+    multiplicity: str,
+    q_max: float,
+    require_complete_primary_coverage: bool,
+) -> Dict[str, Any]:
+    runs = [r for r in control_results.get("runs", []) if not r.get("skipped")]
+    top_runs = [r for r in runs if r.get("set") == "top"]
+    random_runs = [r for r in runs if r.get("set") == "random_matched"]
+    top_by_key = {
+        (int(r["k"]), round(float(r["scale"]), 8), r.get("downscale_others")): r
+        for r in top_runs
+    }
+    random_by_key = {
+        (int(r["k"]), round(float(r["scale"]), 8), r.get("downscale_others")): r
+        for r in random_runs
+    }
+
+    selected_downscale_values = sorted(
+        {
+            key[2]
+            for key in top_by_key.keys()
+            if key[0] in set(primary_k_values) and key[1] in {round(float(s), 8) for s in primary_scales}
+        },
+        key=lambda x: (x is not None, float(x) if x is not None else -1.0),
+    )
+    if not selected_downscale_values:
+        selected_downscale_values = [None]
+
+    intervention_set = {str(x) for x in primary_interventions}
+    expected_rows: List[Dict[str, Any]] = []
+    for k in sorted({int(x) for x in primary_k_values}):
+        for scale in sorted({round(float(s), 8) for s in primary_scales}):
+            for downscale in selected_downscale_values:
+                if "ablation" in intervention_set and abs(scale) <= 1e-9:
+                    expected_rows.append({"k": k, "scale": scale, "downscale_others": downscale, "intervention": "ablation"})
+                if "amplification" in intervention_set and scale > 1.0:
+                    expected_rows.append({"k": k, "scale": scale, "downscale_others": downscale, "intervention": "amplification"})
+
+    row_checks: List[Dict[str, Any]] = []
+    missing_rows: List[Dict[str, Any]] = []
+    multiplicity_rows: List[Dict[str, Any]] = []
+
+    for row in expected_rows:
+        key = (int(row["k"]), round(float(row["scale"]), 8), row.get("downscale_others"))
+        top_run = top_by_key.get(key)
+        rand_run = random_by_key.get(key)
+        if top_run is None or rand_run is None:
+            missing_rows.append(dict(row))
+            row_checks.append(
+                {
+                    **row,
+                    "passes": False,
+                    "failure_reason": "missing_top_or_random_condition",
+                }
+            )
             continue
-        k = run["k"]
-        downscale = run.get("downscale_others")
-        scale = float(run["scale"])
-        rand_run = next(
-            (
-                r
-                for r in runs
-                if not r.get("skipped")
-                and r["k"] == k
-                and r.get("downscale_others") == downscale
-                and abs(float(r["scale"]) - scale) < 1e-9
-                and r["set"] == "random_matched"
-            ),
-            None,
-        )
-        if rand_run is None:
-            continue
 
-        check: Dict[str, Any] = {
-            "k": k,
-            "scale": scale,
-            "downscale_others": downscale,
-            "criteria": {},
-        }
+        criteria: Dict[str, Any] = {}
+        passes = True
+        failure_reason: Optional[str] = None
 
-        # Ablation sensitivity via paired prompt correctness difference (rand - top)
-        if abs(scale - 0.0) < 1e-9:
-            top_correct = run["positive"]["per_prompt"]["copy_correct"]
+        if row["intervention"] == "ablation":
+            top_correct = top_run["positive"]["per_prompt"]["copy_correct"]
             rand_correct = rand_run["positive"]["per_prompt"]["copy_correct"]
-            ci = _paired_diff_ci(rand_correct, top_correct, seed=seed + k, num_samples=bootstrap_samples)
-            mean_diff = ci["mean"]
+            ci = _paired_diff_ci(rand_correct, top_correct, seed=seed + int(row["k"]), num_samples=bootstrap_samples)
+            mean_diff = float(ci["mean"])
             criterion = {
                 "mean_rand_minus_top_copy_accuracy": mean_diff,
                 "ci": [ci["ci_low"], ci["ci_high"]],
-                "passes": (mean_diff >= 0.10 and ci["ci_low"] > 0.0),
+                "passes": bool(mean_diff >= 0.10 and float(ci["ci_low"]) > 0.0),
             }
-            check["criteria"]["ablation_sensitivity"] = criterion
-            passed = passed or bool(criterion["passes"])
+            criteria["ablation_sensitivity"] = criterion
+            if not criterion["passes"]:
+                passes = False
+                failure_reason = "ablation_sensitivity_failed"
+            p_value = _approx_two_sided_p_from_ci(mean=mean_diff, ci_low=float(ci["ci_low"]), ci_high=float(ci["ci_high"]))
+            multiplicity_rows.append(
+                {
+                    **row,
+                    "metric": "mean_rand_minus_top_copy_accuracy",
+                    "mean": mean_diff,
+                    "ci_low": float(ci["ci_low"]),
+                    "ci_high": float(ci["ci_high"]),
+                    "p_value": p_value,
+                }
+            )
 
-        # Amplification sensitivity via paired target prob difference (top - rand)
-        if scale > 1.0:
-            top_prob = run["positive"]["per_prompt"]["copy_target_prob"]
+        elif row["intervention"] == "amplification":
+            top_prob = top_run["positive"]["per_prompt"]["copy_target_prob"]
             rand_prob = rand_run["positive"]["per_prompt"]["copy_target_prob"]
-            ci = _paired_diff_ci(top_prob, rand_prob, seed=seed + int(scale * 100), num_samples=bootstrap_samples)
+            ci = _paired_diff_ci(
+                top_prob,
+                rand_prob,
+                seed=seed + int(row["k"]) + int(round(row["scale"] * 100)),
+                num_samples=bootstrap_samples,
+            )
             criterion = {
                 "mean_top_minus_rand_copy_target_prob": ci["mean"],
                 "ci": [ci["ci_low"], ci["ci_high"]],
-                "passes": ci["ci_low"] > 0.0,
+                "passes": float(ci["ci_low"]) > 0.0,
             }
-            check["criteria"]["amplification_sensitivity"] = criterion
-            passed = passed or bool(criterion["passes"])
+            criteria["amplification_sensitivity"] = criterion
+            if not criterion["passes"]:
+                passes = False
+                failure_reason = "amplification_sensitivity_failed"
 
-            # Specificity: positive effect > negative effect for same head set
-            pos_delta = run["positive"]["per_prompt"]["copy_target_prob_delta_vs_baseline"]
-            neg_delta = run["negative"]["per_prompt"]["copy_target_prob_delta_vs_baseline"]
+            pos_delta = top_run["positive"]["per_prompt"]["copy_target_prob_delta_vs_baseline"]
+            neg_delta = top_run["negative"]["per_prompt"]["copy_target_prob_delta_vs_baseline"]
             ci_spec = _unpaired_mean_diff_ci(
                 pos_delta,
                 neg_delta,
-                seed=seed + 17 + int(scale * 100),
+                seed=seed + 17 + int(round(row["scale"] * 100)),
                 num_samples=bootstrap_samples,
             )
             criterion_spec = {
                 "mean_pos_minus_neg_delta": ci_spec["mean"],
                 "ci": [ci_spec["ci_low"], ci_spec["ci_high"]],
-                "passes": ci_spec["ci_low"] > 0.0,
+                "passes": float(ci_spec["ci_low"]) > 0.0,
             }
-            check["criteria"]["specificity"] = criterion_spec
-            passed = passed or bool(criterion_spec["passes"])
+            criteria["specificity"] = criterion_spec
+            if not criterion_spec["passes"]:
+                passes = False
+                failure_reason = "specificity_failed"
 
-        top_vs_random_checks.append(check)
+            p_value = _approx_two_sided_p_from_ci(
+                mean=float(ci["mean"]),
+                ci_low=float(ci["ci_low"]),
+                ci_high=float(ci["ci_high"]),
+            )
+            multiplicity_rows.append(
+                {
+                    **row,
+                    "metric": "mean_top_minus_rand_copy_target_prob",
+                    "mean": float(ci["mean"]),
+                    "ci_low": float(ci["ci_low"]),
+                    "ci_high": float(ci["ci_high"]),
+                    "p_value": p_value,
+                }
+            )
+        else:
+            passes = False
+            failure_reason = "unsupported_primary_intervention"
 
+        row_checks.append(
+            {
+                **row,
+                "criteria": criteria,
+                "passes": passes,
+                "failure_reason": None if passes else failure_reason,
+            }
+        )
+
+    multiplicity_rows_with_q = (
+        _bh_fdr(multiplicity_rows, p_key="p_value")
+        if multiplicity == "bh_fdr"
+        else [dict(row, q_value=None) for row in multiplicity_rows]
+    )
+    q_values = [float(row["q_value"]) for row in multiplicity_rows_with_q if row.get("q_value") is not None]
+    missing_q_rows = [row for row in multiplicity_rows_with_q if row.get("q_value") is None]
+    worst_q = max(q_values) if q_values else None
+    best_q = min(q_values) if q_values else None
+
+    multiplicity_passes = True
+    multiplicity_failure_reason = None
+    if multiplicity == "bh_fdr":
+        if require_complete_primary_coverage and missing_rows:
+            multiplicity_passes = False
+            multiplicity_failure_reason = "missing_primary_row_coverage"
+        elif require_complete_primary_coverage and missing_q_rows:
+            multiplicity_passes = False
+            multiplicity_failure_reason = "missing_primary_q_coverage"
+        elif worst_q is None:
+            multiplicity_passes = False
+            multiplicity_failure_reason = "missing_primary_q_coverage"
+        elif worst_q > q_max:
+            multiplicity_passes = False
+            multiplicity_failure_reason = "primary_q_above_threshold"
+
+    readiness_block_reasons: List[str] = []
+    if missing_rows:
+        readiness_block_reasons.append("missing_primary_row_coverage")
+    for row in row_checks:
+        if not row["passes"]:
+            readiness_block_reasons.append(
+                f"row_failed:k{row['k']}:scale{row['scale']}:downscale{row.get('downscale_others')}:intv{row['intervention']}"
+            )
+    if not multiplicity_passes:
+        readiness_block_reasons.append(f"multiplicity_failed:{multiplicity_failure_reason}")
+
+    overall_passes = bool(row_checks) and all(row["passes"] for row in row_checks) and multiplicity_passes
     return {
-        "passes": passed,
-        "checks": top_vs_random_checks,
+        "schema_version": "phase3_gate_summary_v2",
+        "passes": overall_passes,
+        "checks": row_checks,
+        "row_checks": row_checks,
+        "primary_grid": {
+            "primary_interventions": sorted(intervention_set),
+            "primary_k_values": sorted({int(x) for x in primary_k_values}),
+            "primary_scales": sorted({round(float(x), 8) for x in primary_scales}),
+            "downscale_others": selected_downscale_values,
+            "n_expected_rows": len(expected_rows),
+            "n_observed_rows": len(expected_rows) - len(missing_rows),
+            "missing_rows": missing_rows,
+        },
+        "multiplicity_summary": {
+            "method": multiplicity,
+            "q_max": q_max,
+            "require_complete_primary_coverage": require_complete_primary_coverage,
+            "rows": multiplicity_rows_with_q,
+            "n_rows": len(multiplicity_rows_with_q),
+            "best_q": best_q,
+            "worst_q": worst_q,
+            "passes": multiplicity_passes,
+            "failure_reason": multiplicity_failure_reason,
+        },
+        "readiness_block_reasons_phase3": sorted(set(readiness_block_reasons)),
     }
 
 
@@ -819,8 +1023,17 @@ def main() -> None:
     k_values = _parse_int_list(args.k_values)
     scales = _parse_float_list(args.scales)
     downscale_values = _parse_optional_float_list(args.downscale_others)
+    phase3_primary_interventions = _parse_str_list(args.phase3_primary_interventions)
+    phase3_primary_k_values = _parse_int_list(args.phase3_primary_k_values)
+    phase3_primary_scales = _parse_float_list(args.phase3_primary_scales)
     if not downscale_values:
         downscale_values = [None, 0.9]
+    if not phase3_primary_interventions:
+        phase3_primary_interventions = ["ablation", "amplification"]
+    if not phase3_primary_k_values:
+        phase3_primary_k_values = [5, 10]
+    if not phase3_primary_scales:
+        phase3_primary_scales = [0.0, 1.25, 1.5, 2.0]
 
     if args.smoke:
         args.control_count_per_family = min(args.control_count_per_family, 50)
@@ -828,6 +1041,9 @@ def main() -> None:
             args.phase0_prompts = 10
         scales = [0.0, 1.0, 1.25]
         downscale_values = [None]
+        phase3_primary_scales = [scale for scale in phase3_primary_scales if scale in set(scales)]
+        if not phase3_primary_scales:
+            phase3_primary_scales = [0.0, 1.25]
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_root = (
@@ -855,6 +1071,12 @@ def main() -> None:
         "downscale_others": downscale_values,
         "strict_head_hooks": args.strict_head_hooks,
         "epsilon": args.epsilon,
+        "phase3_primary_interventions": phase3_primary_interventions,
+        "phase3_primary_k_values": phase3_primary_k_values,
+        "phase3_primary_scales": phase3_primary_scales,
+        "phase3_multiplicity": args.phase3_multiplicity,
+        "phase3_q_max": args.phase3_q_max,
+        "phase3_require_complete_primary_coverage": args.phase3_require_complete_primary_coverage,
         "smoke": args.smoke,
     }
     _json_dump(output_root / "run_manifest.json", run_manifest)
@@ -1086,6 +1308,10 @@ def main() -> None:
     phase2_summary = {
         "passes": phase2_pass,
         "rank_stability_spearman_top50": rank_stability,
+        "same_set_shuffle_invariance_top50": rank_stability,
+        "subsample_stability_top50": None,
+        "family_heldout_stability_top50": None,
+        "seed_robustness_top50": rank_stability if len(pos_runs) >= 2 else None,
         "separability": separability_records,
         "effect_nonzero_rate_max": pos_effect_nonzero_max,
         "nonsilent_pass": nonsilent_pass,
@@ -1152,7 +1378,17 @@ def main() -> None:
             epsilon=args.epsilon,
         )
         _json_dump(output_root / "phase3_control_sweeps.json", _strip_per_prompt(phase3_results))
-        phase3_gate = _evaluate_phase3_gates(phase3_results, bootstrap_samples=args.bootstrap_samples, seed=seeds[0])
+        phase3_gate = _evaluate_phase3_gates(
+            phase3_results,
+            bootstrap_samples=args.bootstrap_samples,
+            seed=seeds[0],
+            primary_interventions=phase3_primary_interventions,
+            primary_k_values=phase3_primary_k_values,
+            primary_scales=phase3_primary_scales,
+            multiplicity=args.phase3_multiplicity,
+            q_max=float(args.phase3_q_max),
+            require_complete_primary_coverage=bool(args.phase3_require_complete_primary_coverage),
+        )
         phase3_gate["skipped"] = False
         _json_dump(output_root / "phase3_gate_summary.json", phase3_gate)
     else:

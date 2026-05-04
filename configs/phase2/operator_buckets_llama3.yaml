@@ -1,0 +1,131 @@
+run_name: operator_bottleneck_llama3_addition_mvp
+phase: phase2
+
+model:
+  name: meta-llama/Meta-Llama-3-8B
+
+runtime:
+  devices: "0,1"
+  batch_size: 8
+  seeds: [0, 1]
+  low_cpu_mode: true
+  deterministic_generation: true
+  allow_sampling_fallback: false
+  operator_shard_mode: false
+  operator_filter: null
+  batch_autotune:
+    enabled: true
+    min_batch_size: 4
+    max_batch_size: null
+    growth_factor: 1.5
+    safety_backoff: 0.85
+    max_retries_after_oom: 3
+    stages: [localize, intervene, cot]
+    equivalence_check:
+      enabled: true
+      sample_size: 16
+      max_abs_logit_diff: 1.0e-4
+      max_metric_diff: 1.0e-4
+
+# Phase 2 MVP starts with addition buckets only. Subtraction/multiplication will be added after
+# localization + intervention plumbing is validated on this operator family.
+datasets:
+  counts_per_bucket: 64
+  representation_variants: [plain]
+  operators:
+    addition: [no_carry, single_carry, cascading_carry]
+  target_operator_selection_eval_split:
+    enabled: true
+    holdout_fraction: 0.50
+    min_examples_per_split: 8
+    seed_offset: 101
+    require_strict: true
+    hard_stop_on_failure: true
+
+localization:
+  component_types: [attention_heads, mlp_neurons]
+  metric_targets: [answer_token, per_digit]
+  stability_modes: [same_set_shuffle_invariance, subsample_stability, family_heldout_stability]
+  strict_attention_heads: true
+  component_sampling_seed: 0
+  score_aggregation: quantile
+  score_quantile: 0.95
+  min_valid_target_count: 64
+  min_components_passing: 1
+  min_answer_target_valid_rate: 0.50
+
+interventions:
+  tests: [ablation, amplification]
+  primary_interventions: [ablation, amplification]
+  primary_k_values: [5, 10]
+  primary_scales: [0.0, 1.25]
+  scales: [0.0, 1.0, 1.25, 1.5]
+  controls: [matched_random, induction_baseline]
+  patching: false
+  primary_component_set: top
+
+cot_compare:
+  enabled: true
+  direct_instruction: "Give only the final numeric answer."
+  cot_instruction: "Think step by step, then give the final answer."
+  format_lock:
+    enabled: true
+    answer_marker: "####"
+  relaxed_parser_diagnostics:
+    enabled: true
+  paired_count: 64
+  evaluation_parse_mode: strict_final_numeric
+  max_new_tokens: 64
+  effect_abs_min: 0.01
+  parse_rate_delta_abs_max: 0.05
+  min_pairs: 32
+  parse_rate_min: 0.80
+  require_accuracy_ci_excludes_zero: true
+  stratify_by_dataset: true
+  sampling_seed: 0
+  dataset_pair_allocation: weighted_by_dataset_size
+
+# Phase 2.1 hardening defaults. Calibrated thresholds are derived at runtime and floored by these values.
+gates:
+  dataset_bucket_min_examples: 8
+  localization_nonzero_min: 0.01
+  localization_prob_delta_abs_min_floor: 1.0e-5
+  specificity_ci_low_min: 0.01
+  specificity_mean_gap_min: 0.01
+  require_all_component_types: true
+  require_non_target_operator_evidence: true
+  cot_required_for_readiness: true
+  specificity_requires_primary_set: true
+  specificity_primary_set: top
+  specificity_requires_directionality: true
+  specificity_requires_both_primary_interventions: true
+  specificity_condition_policy: fixed_preregistered_grid
+  specificity_sign_policy: intervention_signed
+  multiplicity_require_complete_primary_coverage: true
+  scope_block_on_single_operator: true
+  multiplicity_blocking:
+    enabled: false
+    q_max: 0.10
+  calibration:
+    enabled: true
+    localizer_null_policy: target_shuffle+family_heldout
+    family_heldout_coverage: exhaustive
+    max_heldout_buckets: 2
+    quantile: 0.95
+  anomaly_blocking:
+    enabled: true
+    baseline_near_floor_max: 0.15
+    high_accuracy_min: 0.90
+    min_accuracy_delta: 0.50
+    top_ablation_delta_vs_random_max: 0.10
+    top_amplification_delta_vs_random_min: -0.10
+    ablation_large_positive_delta_min: 0.50
+    prediction_sample_size: 8
+
+analysis:
+  multiplicity_reporting: bh_fdr
+  preregistration_config: configs/phase2/preregistration.yaml
+  parser_audit:
+    enabled: true
+    per_dataset_limit: 16
+    adjudication_cap: 64

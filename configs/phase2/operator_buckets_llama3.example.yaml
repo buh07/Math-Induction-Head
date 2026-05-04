@@ -9,14 +9,47 @@ model:
 datasets:
   operator_buckets:
     addition: [no_carry, single_carry, cascading_carry]
-    subtraction: [no_borrow, borrow, cascading_borrow]
+    subtraction: [no_borrow, single_borrow, cascading_borrow]
     multiplication: [table_lookup, partial_product, carry_partial_sum]
+  target_operator_selection_eval_split:
+    enabled: true
+    holdout_fraction: 0.50
+    min_examples_per_split: 8
+    seed_offset: 101
+    require_strict: true
+    hard_stop_on_failure: true
 
 localization:
   components: [attention_heads, mlp_neurons]
   metrics: [answer_token_logit_delta, answer_token_prob_delta, next_token_kl]
   stability: [same_set_shuffle_invariance, subsample_stability, family_heldout_stability]
+  component_sampling_seed: 0
 
 interventions:
   tests: [ablation, amplification, patching]
+  primary_interventions: [ablation, amplification]
+  primary_k_values: [5, 10]
+  primary_scales: [0.0, 1.25]
   controls: [matched_random, induction_baseline]
+
+cot_compare:
+  format_lock:
+    enabled: true
+    answer_marker: "####"
+  relaxed_parser_diagnostics:
+    enabled: true
+
+gates:
+  specificity_condition_policy: fixed_preregistered_grid
+  specificity_sign_policy: intervention_signed
+  multiplicity_require_complete_primary_coverage: true
+  calibration:
+    localizer_null_policy: target_shuffle+family_heldout
+    family_heldout_coverage: exhaustive
+
+analysis:
+  preregistration_config: configs/phase2/preregistration.yaml
+  parser_audit:
+    enabled: true
+    per_dataset_limit: 16
+    adjudication_cap: 64

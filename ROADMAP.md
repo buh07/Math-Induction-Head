@@ -11,9 +11,16 @@ Project phase labels used throughout the repository:
 - **Phase 1 (Steering Baseline / Validated Baseline)** is complete enough to serve as the validated comparison axis; Phase 1 / Plan A is the completed induction-head validity tranche.
 - The mainline research direction is now **operator-specific heuristic bottlenecks** plus **CoT gating/composition**.
 - Future arithmetic improvement claims require arithmetic-specific component identification and causal validation; induction-head amplification is no longer the default primary intervention.
+- The most recent Phase 2 addition-only run (2026-03-03) is operationally complete but **provisional** and triggers a validity-hardening tranche before broader expansion.
 
 Baseline evidence anchor:
 - `results/phase1/canonical/head_validity_run_20260225_120553_gpu01/gate_summary.json`
+
+Latest Phase 2 checkpoint anchors:
+- `results/phase2/operator_bottleneck_run_20260302_222145_gpu2/phase2_gate_summary.json`
+- `results/phase2/operator_bottleneck_run_20260302_222145_gpu2/legacy_audit.json`
+- `results/phase2/operator_bottleneck_run_20260302_222145_gpu2/phase2_interventions/addition_attention_heads.json`
+- `results/phase2/operator_bottleneck_run_20260302_222145_gpu2/phase2_cot_compare/addition.json`
 
 ## Phase A: Consolidate Validated Baseline (completed Plan A, induction-head validity)
 
@@ -47,18 +54,26 @@ Baseline evidence anchor:
 ### Goals
 - Build arithmetic datasets that expose operator-specific and subpattern-specific failures.
 - Measure failure anatomy (carry/borrow/per-digit errors), not just final-answer accuracy.
+- Close the immediate validity gaps observed in the latest Phase 2 checkpoint before scaling scope.
 
 ### Tasks
+- Harden gate semantics before larger dataset/operator expansion:
+  - raise non-trivial thresholds for localization and specificity gates
+  - require CoT gate execution for tranche readiness policy
+  - enforce sanity checks for extreme intervention deltas
 - Create bucketed datasets for addition/subtraction/multiplication (no-carry, carry, no-borrow, borrow, etc.).
 - Add metadata annotations per prompt (operator, bucket, expected answer, optional per-digit targets).
 - Extend evaluation outputs to include per-digit correctness and carry/borrow-specific metrics.
 
 ### Exit Criteria
+- Hardening tranche resolves the provisional issues from the 2026-03-03 checkpoint.
 - Dataset buckets exist with reproducible generation configs and hashes.
 - Error taxonomy metrics are emitted alongside standard accuracy/parse metrics.
 - At least one strong model (Llama-3-8B) shows differentiated performance across buckets.
 
 ### Failure Conditions / Fallback
+- Failure: gates pass numerically while localization remains near-zero or CoT remains untested.
+- Fallback: block promotion to operator expansion until gate semantics and required evidence are fixed.
 - Failure: bucket definitions do not separate behaviors (all buckets behave identically).
 - Fallback: refine bucket definitions and add representation variants (spacing, digit tags, format controls).
 

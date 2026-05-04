@@ -59,5 +59,32 @@ cache/*.pth
 Thumbs.db
 
 # HuggingFace models (large files)
+models
 models/
 *.safetensors
+
+# Large binary / LFS-candidate files
+*.tar.gz
+*.tar.bz2
+*.tar
+*.zip
+*.7z
+*.bin
+*.pkl
+*.pickle
+*.npy
+*.npz
+*.h5
+*.hdf5
+*.ckpt
+*.parquet
+*.arrow
+
+# Shared scratch storage symlinks (point to /scratch, not for version control)
+datasets
+huggingface
+shared_storage
+
+# Local environment / secrets
+.shared_storage.env
+*.env

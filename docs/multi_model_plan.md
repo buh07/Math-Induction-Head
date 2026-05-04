@@ -8,6 +8,14 @@ Repository phase context:
 
 The project now treats the completed induction-head validity tranche (Plan A) as a **validated baseline / comparison axis**. The main replication target is the new **operator-specific heuristic bottleneck** program.
 
+Current constraint from latest Phase 2 checkpoint:
+- The 2026-03-03 addition-only Phase 2 run is operationally complete but **provisional**.
+- Multi-model replication should remain blocked until Phase 2.1 hardening resolves:
+  - permissive gate-threshold semantics
+  - near-zero localization effect magnitudes
+  - missing CoT gate evidence
+  - intervention sanity/leakage concerns
+
 ## Replication Principles
 
 - Replicate validity discipline before replicating large intervention sweeps.
@@ -129,6 +137,8 @@ Required outputs:
 - run manifest
 - phase/gate summary JSON(s)
 - detailed localization/intervention outputs
+- preregistration + power-analysis artifacts (`preregistration_used.json`, `power_analysis_report.json`)
+- parser audit (`parser_audit.json`) for parse-mode agreement/ambiguity checks
 - logs and status sidecars for long tmux/scheduler runs
 
 ## Historical Note (Legacy / Comparison Context)

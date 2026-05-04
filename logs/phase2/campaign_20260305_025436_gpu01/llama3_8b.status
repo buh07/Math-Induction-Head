@@ -1,0 +1,2 @@
+EXIT_CODE=137
+ABORT_REASON=manual_switch_to_sharded_fast_path_for_max_speed
